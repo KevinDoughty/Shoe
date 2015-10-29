@@ -81,7 +81,7 @@ var Shoe = (function() {
           if (this._isProxy) { // do this differently
             presentation[name] = value;
           } else {
-            var animation = this.shoeAnimationForKey(name,this,value);
+            var animation = this.shoeAnimationForKey(name,value,this);
             if (animation) {
               animation.property = name;
               animation.from = model[name];
