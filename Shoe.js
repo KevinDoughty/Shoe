@@ -154,7 +154,7 @@ var Shoe = (function() {
   }
   ShoeLayer.prototype = Object.create(ShoeContext.prototype);
   ShoeLayer.prototype.constructor = ShoeLayer;
-  ShoeLayer.prototype.shoeAnimationForKey = function(key,target) {
+  ShoeLayer.prototype.shoeAnimationForKey = function(key,value,target) {
     return null;
   };
   
