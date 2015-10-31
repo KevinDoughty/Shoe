@@ -194,7 +194,9 @@ var Shoe = (function() {
     this.removeAnimationNamed = this.removeAnimation;
     
     this.animationNamed = function(name) {
-      return activeAnimations[name];
+      var animation = activeAnimations[name];
+      if (animation) return shallowCopyAnimation(animation);
+      return null;
     }
     
     this.context = context;
