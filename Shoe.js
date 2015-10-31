@@ -78,7 +78,9 @@ var Shoe = (function() {
     var defaultAnimations = {};
     var animationCount = 0;
     
-    this.registerAnimatableProperty = function(name, defaultAnimation) {
+    this.registerAnimatableProperty = function(name, defaultValue) {
+      var defaultAnimation = defaultValue;
+      if (isFunction(defaultValue)) defaultAnimation = new defaultValue();
       var descriptor = Object.getOwnPropertyDescriptor(this, name);
       if (descriptor && descriptor.configurable === false) {
         console.log("ShoeLayer:%s; registerAnimatableProperty:%s; already defined:%s;",this,name, JSON.stringify(descriptor),this);
@@ -102,14 +104,27 @@ var Shoe = (function() {
           if (this._isProxy) { // do this differently
             presentation[name] = value;
           } else {
-            var animation = this.shoeAnimationForKey(name,value,this);
-            if (!animation) animation = defaultAnimations[name];
+            var animation;
+            var description = this.shoeAnimationForKey(name,value,this);
+            var defaultAnimation = defaultAnimations[name];
+            if (description && description instanceof ShoeValue) {
+              animation = shallowCopyAnimation(description);
+            } else if (description && typeof description === "object" && isFunction(defaultAnimation)) {
+              animation = new defaultAnimation(description);
+              if (!animation instanceof ShoeValue) animation = null;
+            } else if (defaultAnimation instanceof ShoeValue) {
+              animation = shallowCopyAnimation(defaultAnimation);
+              if (description && typeof description === "object") {
+                Object.keys(description).forEach( function(key) {
+                  animation[key] = description[key];
+                });
+              }
+            }
             if (animation) {
-              var copy = shallowCopyAnimation(animation);
-              copy.property = name;
-              copy.from = model[name];
-              copy.to = value;
-              this.addAnimation(copy); // this will copy a second time. 
+              if (animation.property === null || animation.property === undefined) animation.property = name;
+              if (animation.from === null || animation.from === undefined) animation.from = model[name];
+              if (animation.to === null || animation.to === undefined) animation.to = value;
+              this.addAnimation(animation); // this will copy a second time. 
             }
             model[name] = value;
             if (!animation) {
