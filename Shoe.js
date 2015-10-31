@@ -31,6 +31,17 @@ var Shoe = (function() {
     return w && {}.toString.call(w) === "[object Function]";
   }
   
+  function shallowCopyAnimation(object) { // only for subclasses of ShoeValue
+    var constructor = object.constructor;
+    var copy = new constructor(object.settings);
+    var keys = Object.getOwnPropertyNames(object);
+    var length = keys.length;
+    for (var i = 0; i < length; i++) {
+      Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(object, keys[i]));
+    }
+    return copy;
+  }
+  
   function ShoeContext() {
     this.targets = [];
   }
@@ -39,7 +50,7 @@ var Shoe = (function() {
     registerTarget: function(target) {
       if (!this.targets.length) raf(this.ticker.bind(this));
       var index = this.targets.indexOf(target);
-      if (index < 0 ) this.targets.push(target);
+      if (index < 0) this.targets.push(target);
     },
     
     deregisterTarget: function(target) {
@@ -63,9 +74,19 @@ var Shoe = (function() {
   function ShoeLayer(context) {
     var model = {};
     var presentation = {};
-    var animations = {};
+    var activeAnimations = {};
+    var defaultAnimations = {};
     var animationCount = 0;
-    Object.getOwnPropertyNames(this).forEach(function(name) {
+    
+    this.registerAnimatableProperty = function(name, defaultAnimation) {
+      var descriptor = Object.getOwnPropertyDescriptor(this, name);
+      if (descriptor && descriptor.configurable === false) {
+        console.log("ShoeLayer:%s; registerAnimatableProperty:%s; already defined:%s;",this,name, JSON.stringify(descriptor),this);
+        return;
+      }
+      if (defaultAnimation) defaultAnimations[name] = defaultAnimation;
+      else if (defaultAnimations[name]) delete defaultAnimations[name];
+      
       model[name] = this[name];
       Object.defineProperty(this, name, {
         get: function() {
@@ -82,22 +103,33 @@ var Shoe = (function() {
             presentation[name] = value;
           } else {
             var animation = this.shoeAnimationForKey(name,value,this);
+            if (!animation) animation = defaultAnimations[name];
             if (animation) {
-              animation.property = name;
-              animation.from = model[name];
-              animation.to = value;
-              this.addAnimation(animation);
+              var copy = shallowCopyAnimation(animation);
+              copy.property = name;
+              copy.from = model[name];
+              copy.to = value;
+              this.addAnimation(copy); // this will copy a second time. 
             }
             model[name] = value;
+            if (!animation) {
+              // need to manually call render on property value change without animation. transactions.
+              var shoeRender = this.shoeRender;
+              if (isFunction(shoeRender)) {
+                var layer = this.layer || this;
+                var render = shoeRender.bind(layer);
+                render();
+              }
+            }
           }
         }
       });
-    }.bind(this));
-    
+    }
+  
     Object.defineProperty(this, "animations", {
       get: function() {
-        return Object.keys(animations).map(function (key) {
-          return animations[key];
+        return Object.keys(activeAnimations).map(function (key) {
+          return activeAnimations[key];
         });
       }
     });
@@ -109,8 +141,8 @@ var Shoe = (function() {
         proxy._isProxy = true; // do this differently
         var addFunctions = {};
         
-        Object.keys(animations).forEach( function(key) {
-          var animation = animations[key];
+        Object.keys(activeAnimations).forEach( function(key) {
+          var animation = activeAnimations[key];
           var property = animation.property;
           var value = animation[animation.type]; // awkward
           if (compositor[property] === null || compositor[property] === undefined) compositor[property] = animation.zero();
@@ -132,21 +164,22 @@ var Shoe = (function() {
     this.addAnimation = function(animation,name) {
       if (name === null || name === undefined) name = "" + animation.property + animationCount++;
       var context = this.context || this;
-      if (!Object.keys(animations).length) context.registerTarget(this);
-      animations[name] = animation;
-      animation.runActionForLayerForKey(this, name);
+      if (!Object.keys(activeAnimations).length) context.registerTarget(this);
+      var copy = shallowCopyAnimation(animation);
+      activeAnimations[name] = copy;
+      copy.runActionForLayerForKey(this, name);
     }
     this.addAnimationNamed = this.addAnimation;
     
     this.removeAnimation = function(name) {
-      delete animations[name];
+      delete activeAnimations[name];
       var context = this.context || this;
-      if (!Object.keys(animations).length) context.deregisterTarget(this);
+      if (!Object.keys(activeAnimations).length) context.deregisterTarget(this);
     }
     this.removeAnimationNamed = this.removeAnimation;
     
     this.animationNamed = function(name) {
-      return animations[name];
+      return activeAnimations[name];
     }
     
     this.context = context;
@@ -166,10 +199,11 @@ var Shoe = (function() {
     this.duration;
     this.easing;
     this.startTime;
+    this.settings = settings;
     
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
-    });
+    }.bind(this));
     
     this.type = "value"; // awkward
     this[this.type] = this.zero();
@@ -177,7 +211,7 @@ var Shoe = (function() {
     Object.defineProperty(this, this.type, {
       get: function() {
         if (this.startTime === null || this.startTime === undefined) return this.zero();
-        if (!this.duration) return this.to();
+        if (!this.duration) return this.to; // I want delay etc
         var now = performance.now() / 1000; // need global transaction time
         var elapsed = now - this.startTime;
         var progress = elapsed / this.duration;
@@ -205,47 +239,48 @@ var Shoe = (function() {
     }
   }
   
-  function ShoeNumber() {
-    ShoeValue.call(this);
+  function ShoeNumber(settings) {
+    ShoeValue.call(this,settings);
   }
-  ShoeNumber.prototype = {
-    zero : function() {
-      return 0;
-    },
-    add : function(a,b) {
-      return a + b;
-    },
-    invert : function(a) {
-      return -a;
-    },
-    interpolate: function(a,b,progress) {
-      return a + (b-a) * progress;
-    }
-  }
+  ShoeNumber.prototype = Object.create(ShoeValue.prototype);
+  ShoeNumber.prototype.zero = function() {
+    return 0;
+  };
+  ShoeNumber.prototype.add = function(a,b) {
+    return a + b;
+  };
+  ShoeNumber.prototype.invert = function(a) {
+    return -a;
+  };
+  ShoeNumber.prototype.interpolate = function(a,b,progress) {
+    return a + (b-a) * progress;
+  };
+  ShoeNumber.prototype.constructor = ShoeNumber;
   
-  function ShoeScale() {
-    ShoeValue.call(this);
+  function ShoeScale(settings) {
+    ShoeValue.call(this,settings);
   }
-  ShoeScale.prototype = {
-    zero: function() {
-      return 1;
-    },
-    add: function(a,b) {
-      return a * b;
-    },
-    invert: function(a) {
-      if (a === 0) return 0;
-      return 1/a;
-    },
-    interpolate: function(a,b,progress) {
-      return a + (b-a) * progress;
-    }
-  }
+  ShoeScale.prototype = Object.create(ShoeValue.prototype);
+  ShoeScale.prototype.zero = function() {
+    return 1;
+  };
+  ShoeScale.prototype.add = function(a,b) {
+    return a * b;
+  };
+  ShoeScale.prototype.invert = function(a) {
+    if (a === 0) return 0;
+    return 1/a;
+  };
+  ShoeScale.prototype.interpolate = function(a,b,progress) {
+    return a + (b-a) * progress;
+  };
+  ShoeScale.prototype.constructor = ShoeScale;
   
   return {
     Layer : ShoeLayer,
     Context : ShoeContext,
     RelativeNumber : ShoeNumber,
     RelativeScale : ShoeScale,
+    RelativeValue : ShoeValue
   }
 })();
