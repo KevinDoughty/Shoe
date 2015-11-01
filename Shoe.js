@@ -296,8 +296,8 @@ var Shoe = (function() {
   return {
     Layer : ShoeLayer,
     Context : ShoeContext,
-    RelativeNumber : ShoeNumber,
-    RelativeScale : ShoeScale,
-    RelativeValue : ShoeValue
+    NumberType : ShoeNumber,
+    ScaleType : ShoeScale,
+    ValueType : ShoeValue
   }
 })();
