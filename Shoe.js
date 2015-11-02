@@ -31,17 +31,6 @@ var Shoe = (function() {
     return w && {}.toString.call(w) === "[object Function]";
   }
   
-  function shallowCopyAnimation(object) { // only for subclasses of ShoeValue
-    var constructor = object.constructor;
-    var copy = new constructor(object.settings);
-    var keys = Object.getOwnPropertyNames(object);
-    var length = keys.length;
-    for (var i = 0; i < length; i++) {
-      Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(object, keys[i]));
-    }
-    return copy;
-  }
-  
   function ShoeContext() {
     this.targets = [];
   }
@@ -108,12 +97,12 @@ var Shoe = (function() {
             var description = this.shoeAnimationForKey(name,value,this);
             var defaultAnimation = defaultAnimations[name];
             if (description && description instanceof ShoeValue) {
-              animation = shallowCopyAnimation(description);
+              animation = description.copy();
             } else if (description && typeof description === "object" && isFunction(defaultAnimation)) {
               animation = new defaultAnimation(description);
               if (!animation instanceof ShoeValue) animation = null;
             } else if (defaultAnimation instanceof ShoeValue) {
-              animation = shallowCopyAnimation(defaultAnimation);
+              animation = defaultAnimation.copy();
               if (description && typeof description === "object") {
                 Object.keys(description).forEach( function(key) {
                   animation[key] = description[key];
@@ -149,7 +138,7 @@ var Shoe = (function() {
       }
     });
     
-    Object.defineProperty(this, "layer", {
+    Object.defineProperty(this, "layer", { // compositing done here
       get: function() { // need transactions and cache presentation layer
         var compositor = {};
         var proxy = Object.create(this);
@@ -176,11 +165,11 @@ var Shoe = (function() {
       }
     });
     
-    this.addAnimation = function(animation,name) {
+    this.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
       if (name === null || name === undefined) name = "" + animation.property + animationCount++;
       var context = this.context || this;
       if (!Object.keys(activeAnimations).length) context.registerTarget(this);
-      var copy = shallowCopyAnimation(animation);
+      var copy = animation.copy();
       activeAnimations[name] = copy;
       copy.runActionForLayerForKey(this, name);
     }
@@ -195,7 +184,7 @@ var Shoe = (function() {
     
     this.animationNamed = function(name) {
       var animation = activeAnimations[name];
-      if (animation) return shallowCopyAnimation(animation);
+      if (animation) return animation.copy();
       return null;
     }
     
@@ -228,7 +217,7 @@ var Shoe = (function() {
     Object.defineProperty(this, this.type, {
       get: function() {
         if (this.startTime === null || this.startTime === undefined) return this.zero();
-        if (!this.duration) return this.to; // I want delay etc
+        if (!this.duration) this.duration = 0;
         var now = performance.now() / 1000; // need global transaction time
         var elapsed = now - this.startTime;
         var progress = elapsed / this.duration;
@@ -246,13 +235,24 @@ var Shoe = (function() {
     this.onend;
     this.runActionForLayerForKey = function(layer,key) {
       this.delta = this.add(this.from,this.invert(this.to));
-      
-      this.onend = function() { // reverse the naming
+      this.onend = function() { // should swap the naming
         layer.removeAnimationNamed(key);
         if (isFunction(this.completion)) this.completion();
       }.bind(this);
       
-      this.startTime = performance.now() / 1000;
+      if (this.startTime === null || this.startTime === undefined) this.startTime = performance.now() / 1000;
+    }
+  }
+  ShoeValue.prototype = {
+    copy: function() {
+      var constructor = this.constructor;
+      var copy = new constructor(this.settings);
+      var keys = Object.getOwnPropertyNames(this);
+      var length = keys.length;
+      for (var i = 0; i < length; i++) {
+        Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(this, keys[i]));
+      }
+      return copy;
     }
   }
   
