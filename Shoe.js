@@ -31,6 +31,11 @@ var Shoe = (function() {
     return w && {}.toString.call(w) === "[object Function]";
   }
   
+  function isNumber(w) {
+    w = scientificToDecimal(w);
+    return !isNaN(parseFloat(w)) && isFinite(w); // I want infinity for repeat count. Probably not duration
+  }
+  
   function ShoeContext() {
     this.targets = [];
   }
@@ -198,6 +203,9 @@ var Shoe = (function() {
   };
   
   function ShoeValue(settings) {
+    if (this.constructor === ShoeValue) {
+      throw new Error("Shoe.ValueType is an abstract base class.");
+    }
     this.settings = settings;
     this.property;
     this.from;
@@ -206,12 +214,13 @@ var Shoe = (function() {
     this.duration;
     this.easing;
     this.repeatCount;
+    this.speed;
     this.startTime;
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
     }.bind(this));
     
-    this.type = "value"; // awkward
+    this.type = "value"; // might be needed for GreenSock compatibility
     this[this.type] = this.zero();
     
     Object.defineProperty(this, this.type, {
@@ -219,11 +228,13 @@ var Shoe = (function() {
         if (this.startTime === null || this.startTime === undefined) return this.zero();
         var now = performance.now() / 1000; // need global transaction time
         var elapsed = now - this.startTime;
-        var progress = elapsed / this.duration;
-        if (progress >= 1) {
-          if (isFunction(this.onend)) this.onend(); // do this elsewhere
+        var progress = 1; // if 0 repeatCount or duration animation ends immediately
+        if (this.duration) progress = elapsed * this.speed / this.duration;
+        if (!this.repeatCount || !this.duration || progress >= this.repeatCount) {
+          if (isFunction(this.onend)) this.onend(); // do this after
           return this.zero();
         } else {
+          if (this.duration) progress = progress % this.duration; // modulus for repeatCount
           if (isFunction(this.easing)) progress = this.easing(progress);
           return this.interpolate(this.delta,this.zero(),progress);
         }
@@ -233,7 +244,9 @@ var Shoe = (function() {
     this.delta;
     this.onend;
     this.runActionForLayerForKey = function(layer,key) {
-      if (!this.duration) this.duration = 0; // validate somewhere else
+      if (!this.duration) this.duration = 0; // need better validation
+      if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
+      if (this.repeatCount === null || this.repeatCount === undefined) this.repeatCount = 1; // consider disallowing negative
       this.delta = this.add(this.from,this.invert(this.to));
       this.onend = function() { // should swap the naming
         layer.removeAnimationNamed(key);
@@ -253,6 +266,18 @@ var Shoe = (function() {
         Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(this, keys[i]));
       }
       return copy;
+    },
+    zero: function() {
+      throw new Error("Must implement function: zero()");
+    },
+    invert: function() {
+      throw new Error("Must implement function: invert(a)");
+    },
+    add: function() {
+      throw new Error("Must implement function: add(a,b)");
+    },
+    interpolate: function() {
+      throw new Error("Must implement function: interpolate(a,b,progress)");
     }
   }
   
@@ -263,11 +288,11 @@ var Shoe = (function() {
   ShoeNumber.prototype.zero = function() {
     return 0;
   };
-  ShoeNumber.prototype.add = function(a,b) {
-    return a + b;
-  };
   ShoeNumber.prototype.invert = function(a) {
     return -a;
+  };
+  ShoeNumber.prototype.add = function(a,b) {
+    return a + b;
   };
   ShoeNumber.prototype.interpolate = function(a,b,progress) {
     return a + (b-a) * progress;
@@ -281,12 +306,12 @@ var Shoe = (function() {
   ShoeScale.prototype.zero = function() {
     return 1;
   };
-  ShoeScale.prototype.add = function(a,b) {
-    return a * b;
-  };
   ShoeScale.prototype.invert = function(a) {
     if (a === 0) return 0;
     return 1/a;
+  };
+  ShoeScale.prototype.add = function(a,b) {
+    return a * b;
   };
   ShoeScale.prototype.interpolate = function(a,b,progress) {
     return a + (b-a) * progress;
