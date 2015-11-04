@@ -40,6 +40,7 @@ var Shoe = (function() {
     this.targets = [];
   }
   
+  
   ShoeContext.prototype = {
     registerTarget: function(target) {
       if (!this.targets.length) raf(this.ticker.bind(this));
@@ -65,6 +66,7 @@ var Shoe = (function() {
     }
   }
   
+  
   function ShoeLayer(context) {
     var model = {};
     var presentation = {};
@@ -84,7 +86,7 @@ var Shoe = (function() {
       else if (defaultAnimations[name]) delete defaultAnimations[name];
       
       model[name] = this[name];
-      Object.defineProperty(this, name, {
+      Object.defineProperty(this, name, { // ACCESSORS
         get: function() {
           if (this._isProxy) { // do this differently
             var value = presentation[name];
@@ -142,12 +144,13 @@ var Shoe = (function() {
         });
       }
     });
-    
-    Object.defineProperty(this, "layer", { // compositing done here
+    var modelLayer = this;
+    Object.defineProperty(this, "layer", { // COMPOSITING. Have separate compositor object?
       get: function() { // need transactions and cache presentation layer
+        if (this._isProxy) return modelLayer;
         var compositor = {};
         var proxy = Object.create(this);
-        proxy._isProxy = true; // do this differently
+        proxy._isProxy = true; // do this differently. Maybe have presentationLayer and modelLayer accessors
         var addFunctions = {};
         
         Object.keys(activeAnimations).forEach( function(key) {
@@ -202,20 +205,25 @@ var Shoe = (function() {
     return null;
   };
   
+  
   function ShoeValue(settings) {
     if (this.constructor === ShoeValue) {
       throw new Error("Shoe.ValueType is an abstract base class.");
     }
     this.settings = settings;
-    this.property;
-    this.from;
-    this.to;
-    this.completion;
-    this.duration;
-    this.easing;
-    this.repeatCount;
-    this.speed;
-    this.startTime;
+    this.property; // string, property name
+    this.from; // type specific
+    this.to; // type specific
+    this.completion; // callback function
+    this.duration; // float. Need to validate/ensure float >= 0
+    this.easing; // currently callback function only, need cubic bezier and presets
+    this.speed; // float
+    this.repeatCount; // float >= 0
+    this.autoreverse; // boolean. When repeatCount > 1. Easing also reversed. Maybe should be named autoreverses, maybe should be camelCased
+    this.fillMode; // string. not implemented. Need absolute animations and refinement of deregisterTarget
+    this.absolute; // boolean. not implemented.
+    this.index; // float. not implemented
+    this.startTime; // float
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
     }.bind(this));
@@ -223,7 +231,7 @@ var Shoe = (function() {
     this.type = "value"; // might be needed for GreenSock compatibility
     this[this.type] = this.zero();
     
-    Object.defineProperty(this, this.type, {
+    Object.defineProperty(this, this.type, { // INTERPOLATION
       get: function() {
         if (this.startTime === null || this.startTime === undefined) return this.zero();
         var now = performance.now() / 1000; // need global transaction time
@@ -231,11 +239,17 @@ var Shoe = (function() {
         var progress = 1; // if 0 repeatCount or duration animation ends immediately
         if (this.duration) progress = elapsed * this.speed / this.duration;
         if (!this.repeatCount || !this.duration || progress >= this.repeatCount) {
-          if (isFunction(this.onend)) this.onend(); // do this after
+          if (isFunction(this.onend)) this.onend(); // do this somewhere else, afterwards
           return this.zero();
         } else {
-          if (this.duration) progress = progress % this.duration; // modulus for repeatCount
+          var inReverse = 0;
+          if (this.duration) {
+            if (this.autoreverse === true) inReverse = Math.floor(progress / this.duration) % 2;
+            progress = progress % this.duration; // modulus for repeatCount
+          }
+          if (inReverse) progress = 1-progress;
           if (isFunction(this.easing)) progress = this.easing(progress);
+          if (this.absolute === true) return this.interpolate(this.from,this.to,progress);
           return this.interpolate(this.delta,this.zero(),progress);
         }
       }
@@ -246,13 +260,12 @@ var Shoe = (function() {
     this.runActionForLayerForKey = function(layer,key) {
       if (!this.duration) this.duration = 0; // need better validation
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
-      if (this.repeatCount === null || this.repeatCount === undefined) this.repeatCount = 1; // consider disallowing negative
+      if (this.repeatCount === null || this.repeatCount === undefined) this.repeatCount = 1; // negative values have no effect
       this.delta = this.add(this.from,this.invert(this.to));
       this.onend = function() { // should swap the naming
         layer.removeAnimationNamed(key);
         if (isFunction(this.completion)) this.completion();
       }.bind(this);
-      
       if (this.startTime === null || this.startTime === undefined) this.startTime = performance.now() / 1000;
     }
   }
@@ -281,6 +294,7 @@ var Shoe = (function() {
     }
   }
   
+  
   function ShoeNumber(settings) {
     ShoeValue.call(this,settings);
   }
@@ -298,6 +312,7 @@ var Shoe = (function() {
     return a + (b-a) * progress;
   };
   ShoeNumber.prototype.constructor = ShoeNumber;
+  
   
   function ShoeScale(settings) {
     ShoeValue.call(this,settings);
@@ -317,6 +332,7 @@ var Shoe = (function() {
     return a + (b-a) * progress;
   };
   ShoeScale.prototype.constructor = ShoeScale;
+  
   
   return {
     Layer : ShoeLayer,
