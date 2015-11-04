@@ -150,7 +150,7 @@ var Shoe = (function() {
           var property = animation.property;
           var value = animation[animation.type]; // awkward
           if (compositor[property] === null || compositor[property] === undefined) compositor[property] = animation.zero();
-          if (addFunctions[property] === null || addFunctions[property] === undefined) addFunctions[property] = animation.add;
+          if (addFunctions[property] === null || addFunctions[property] === undefined) addFunctions[property] = animation.add.bind(animation);
           compositor[property] = animation.add(compositor[property],value);
         });
         
@@ -198,15 +198,15 @@ var Shoe = (function() {
   };
   
   function ShoeValue(settings) {
+    this.settings = settings;
     this.property;
     this.from;
     this.to;
     this.completion;
     this.duration;
     this.easing;
+    this.repeatCount;
     this.startTime;
-    this.settings = settings;
-    
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
     }.bind(this));
@@ -217,7 +217,6 @@ var Shoe = (function() {
     Object.defineProperty(this, this.type, {
       get: function() {
         if (this.startTime === null || this.startTime === undefined) return this.zero();
-        if (!this.duration) this.duration = 0;
         var now = performance.now() / 1000; // need global transaction time
         var elapsed = now - this.startTime;
         var progress = elapsed / this.duration;
@@ -234,6 +233,7 @@ var Shoe = (function() {
     this.delta;
     this.onend;
     this.runActionForLayerForKey = function(layer,key) {
+      if (!this.duration) this.duration = 0; // validate somewhere else
       this.delta = this.add(this.from,this.invert(this.to));
       this.onend = function() { // should swap the naming
         layer.removeAnimationNamed(key);
