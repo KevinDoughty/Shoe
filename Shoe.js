@@ -70,9 +70,12 @@ var Shoe = (function() {
   function ShoeLayer(context) {
     var model = {};
     var presentation = {};
-    var activeAnimations = {};
+    var allAnimations = [];
+    var namedAnimations = {};
     var defaultAnimations = {};
-    var animationCount = 0;
+    //var animationCount = 0; // need to implement auto increment key
+    var shouldSortAnimations = false;
+    var animationNumber = 0; // order added
     
     this.registerAnimatableProperty = function(name, defaultValue) {
       var defaultAnimation = defaultValue;
@@ -118,13 +121,15 @@ var Shoe = (function() {
             }
             if (animation) {
               if (animation.property === null || animation.property === undefined) animation.property = name;
-              if (animation.from === null || animation.from === undefined) animation.from = model[name];
+              if (animation.from === null || animation.from === undefined) {
+                if (animation.absolute === true) animation.from = this.layer[name];
+                else animation.from = model[name];
+              }
               if (animation.to === null || animation.to === undefined) animation.to = value;
               this.addAnimation(animation); // this will copy a second time. 
             }
             model[name] = value;
-            if (!animation) {
-              // need to manually call render on property value change without animation. transactions.
+            if (!animation) { // need to manually call render on property value change without animation. transactions.
               var shoeRender = this.shoeRender;
               if (isFunction(shoeRender)) {
                 var layer = this.layer || this;
@@ -136,12 +141,17 @@ var Shoe = (function() {
         }
       });
     }
-  
+    
     Object.defineProperty(this, "animations", {
       get: function() {
-        return Object.keys(activeAnimations).map(function (key) {
-          return activeAnimations[key];
+        return allAnimations.map(function (animation) {
+          return animation.copy(); // Lots of copying. Potential optimization
         });
+      }
+    });
+    Object.defineProperty(this, "animationKeys", {
+      get: function() {
+        return Object.keys(namedAnimations);
       }
     });
     var modelLayer = this;
@@ -149,49 +159,75 @@ var Shoe = (function() {
       get: function() { // need transactions and cache presentation layer
         if (this._isProxy) return modelLayer;
         var compositor = {};
+        var finishedAnimations = [];
         var proxy = Object.create(this);
         proxy._isProxy = true; // do this differently. Maybe have presentationLayer and modelLayer accessors
-        var addFunctions = {};
         
-        Object.keys(activeAnimations).forEach( function(key) {
-          var animation = activeAnimations[key];
+        if (shouldSortAnimations) {
+          allAnimations.sort( function(a,b) {
+            var A = a.index, B = b.index;
+            if (A === null || A === undefined) A = 0;
+            if (B === null || B === undefined) B = 0;
+            var result = A - B;
+            if (!result) result = a.startTime - b.startTime;
+            if (!result) result = a.number - b.number; // animation number is probably not necessary. Unsure about sort behavior.
+            return result;
+          });
+          shouldSortAnimations = false;
+        }
+        
+        allAnimations.forEach( function(animation) {
           var property = animation.property;
           var value = animation[animation.type]; // awkward
-          if (compositor[property] === null || compositor[property] === undefined) compositor[property] = animation.zero();
-          if (addFunctions[property] === null || addFunctions[property] === undefined) addFunctions[property] = animation.add.bind(animation);
-          compositor[property] = animation.add(compositor[property],value);
-        });
-        
-        Object.keys(compositor).forEach( function(key) {
-          var model = this[key];
-          var delta = compositor[key];
-          var presentation = addFunctions[key](model, delta);
-          proxy[key] = presentation;
+          if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model[property];
+          if (animation.absolute === true) compositor[property] = value;
+          else compositor[property] = animation.add(compositor[property],value);
+          if (animation.finished === true) finishedAnimations.push(animation);
         }.bind(this));
+        
+        Object.keys(compositor).forEach( function(property) {
+          proxy[property] = compositor[property];
+        }.bind(this));
+        
+        finishedAnimations.forEach( function(animation) {
+          if (isFunction(animation.onend)) animation.onend();
+        });
         
         return proxy;
       }
     });
     
     this.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
-      if (name === null || name === undefined) name = "" + animation.property + animationCount++;
+      //if (name === null || name === undefined) name = "" + animation.property + animationCount++; // need to implement auto increment key
       var context = this.context || this;
-      if (!Object.keys(activeAnimations).length) context.registerTarget(this);
+      if (!allAnimations.length) context.registerTarget(this);
       var copy = animation.copy();
-      activeAnimations[name] = copy;
+      copy.number = animationNumber++;
+      if (name !== null && name !== undefined) namedAnimations[name] = copy;
+      allAnimations.push(copy);
+      shouldSortAnimations = true;
       copy.runActionForLayerForKey(this, name);
     }
     this.addAnimationNamed = this.addAnimation;
     
-    this.removeAnimation = function(name) {
-      delete activeAnimations[name];
+    this._removeAnimationInstance = function(animation) {
+      var index = allAnimations.indexOf(animation);
+      if (index > -1) {
+        allAnimations.splice(index,1);
+        shouldSortAnimations = true;
+      }
       var context = this.context || this;
-      if (!Object.keys(activeAnimations).length) context.deregisterTarget(this);
+      if (!allAnimations.length) context.deregisterTarget(this);
+    }
+    this.removeAnimation = function(name) {
+      var animation = namedAnimations[name];
+      this._removeAnimationInstance(animation);
+      delete namedAnimations[name];
     }
     this.removeAnimationNamed = this.removeAnimation;
     
     this.animationNamed = function(name) {
-      var animation = activeAnimations[name];
+      var animation = namedAnimations[name];
       if (animation) return animation.copy();
       return null;
     }
@@ -212,17 +248,19 @@ var Shoe = (function() {
     }
     this.settings = settings;
     this.property; // string, property name
-    this.from; // type specific
-    this.to; // type specific
-    this.completion; // callback function
-    this.duration; // float. Need to validate/ensure float >= 0
-    this.easing; // currently callback function only, need cubic bezier and presets
-    this.speed; // float
-    this.repeatCount; // float >= 0
-    this.autoreverse; // boolean. When repeatCount > 1. Easing also reversed. Maybe should be named autoreverses, maybe should be camelCased
-    this.fillMode; // string. not implemented. Need absolute animations and refinement of deregisterTarget
-    this.absolute; // boolean. not implemented.
-    this.index; // float. not implemented
+    this.from; // type specific. Subclasses must implement zero, invert, add, and interpolate
+    this.to; // type specific. Subclasses must implement zero, invert, add, and interpolate
+    this.completion; // NOT FINISHED. callback function, fires regardless of fillMode. Should rename. Should also implement didStart, maybe didTick, etc.
+    this.duration; // float. Need to validate/ensure float >= 0. Defaults to 0.
+    this.easing; // NOT FINISHED. currently callback function only, need cubic bezier and presets. Defaults to linear
+    this.speed; // float. Defaults to 1. RECONSIDER. Pausing currently not possible like in Core Animation. Layers have speed, beginTime, timeOffset!
+    this.repeatCount = 1; // float >= 0. Defaults to 1. Maybe should be named "iterations"
+    this.autoreverse; // boolean. When repeatCount > 1. Easing also reversed. Maybe should be named "autoreverses", maybe should be camelCased
+    this.fillMode; // string. Defaults to "none". NOT IMPLEMENTED. Needs better compositing and refinement of deregisterTarget. maybe should be named "fill"
+    this.absolute; // boolean. Defaults to false.
+    this.index = 0; // float. Custom compositing order. Defaults to 0.
+    this.delay; // NOT IMPLEMENTED
+    this.finished = false;
     this.startTime; // float
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
@@ -234,36 +272,43 @@ var Shoe = (function() {
     Object.defineProperty(this, this.type, { // INTERPOLATION
       get: function() {
         if (this.startTime === null || this.startTime === undefined) return this.zero();
+        var speed = this.speed; // might make speed a property of layer not animation, might not because no sublayers / layer hierarcy
         var now = performance.now() / 1000; // need global transaction time
         var elapsed = now - this.startTime;
-        var progress = 1; // if 0 repeatCount or duration animation ends immediately
-        if (this.duration) progress = elapsed * this.speed / this.duration;
-        if (!this.repeatCount || !this.duration || progress >= this.repeatCount) {
-          if (isFunction(this.onend)) this.onend(); // do this somewhere else, afterwards
-          return this.zero();
-        } else {
-          var inReverse = 0;
-          if (this.duration) {
-            if (this.autoreverse === true) inReverse = Math.floor(progress / this.duration) % 2;
-            progress = progress % this.duration; // modulus for repeatCount
-          }
-          if (inReverse) progress = 1-progress;
-          if (isFunction(this.easing)) progress = this.easing(progress);
-          if (this.absolute === true) return this.interpolate(this.from,this.to,progress);
-          return this.interpolate(this.delta,this.zero(),progress);
+        var iterationProgress = 1;
+        var combinedProgress = 1;
+        var iterationDuration = this.duration;
+        var combinedDuration = iterationDuration * this.repeatCount;
+        if (combinedDuration) {
+          iterationProgress = elapsed * speed / iterationDuration;
+          combinedProgress = elapsed * speed / combinedDuration;
         }
+        if (combinedProgress >= 1) {
+          iterationProgress = 1;
+          this.finished = true;
+        }
+        var inReverse = 0; // falsy
+        if (!this.finished) {
+          if (this.autoreverse === true) inReverse = Math.floor(iterationProgress) % 2;
+          iterationProgress = iterationProgress % 1; // modulus for repeatCount
+        }
+        if (inReverse) iterationProgress = 1-iterationProgress; // easing is also reversed
+        if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
+        if (this.absolute === true) return this.interpolate(this.from,this.to,iterationProgress);
+        return this.interpolate(this.delta,this.zero(),iterationProgress);
       }
     });
     
     this.delta;
     this.onend;
     this.runActionForLayerForKey = function(layer,key) {
-      if (!this.duration) this.duration = 0; // need better validation
+      if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.repeatCount === null || this.repeatCount === undefined) this.repeatCount = 1; // negative values have no effect
-      this.delta = this.add(this.from,this.invert(this.to));
+      if (this.absolute !== true) this.delta = this.add(this.from,this.invert(this.to));
       this.onend = function() { // should swap the naming
-        layer.removeAnimationNamed(key);
+        if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
+        else layer._removeAnimationInstance(this);
         if (isFunction(this.completion)) this.completion();
       }.bind(this);
       if (this.startTime === null || this.startTime === undefined) this.startTime = performance.now() / 1000;
