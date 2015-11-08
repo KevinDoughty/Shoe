@@ -21,6 +21,7 @@ THE SOFTWARE.
 */
 
 var Shoe = (function() {
+  
   var raf = window.requestAnimationFrame ||
     window.webkitRequestAnimationFrame ||
     window.mozRequestAnimationFrame ||
@@ -36,14 +37,48 @@ var Shoe = (function() {
     return !isNaN(parseFloat(w)) && isFinite(w); // I want infinity for repeat count. Probably not duration
   }
   
-  function ShoeContext() {
-    this.targets = [];
+  
+  
+  function ShoeTransaction(automaticallyCommit) {
+    this.time = performance.now() / 1000; // value should probably be inherited from parent transaction
+    this.disableAnimation = false; // value should probably be inherited from parent transaction
+    this.layers = {}; // NOT IMPLEMENTED. Cache layers so you don't have to repeatedly calculate presentation values.
+    this.automaticallyCommit = automaticallyCommit;
   }
   
   
+  
+  function ShoeContext() {
+    this.targets = [];
+    this.transactions = [];
+    this.ticking = false;
+  }
+  
   ShoeContext.prototype = {
+    _createTransaction: function(automaticallyCommit) {
+      var transaction = new ShoeTransaction(automaticallyCommit);
+      this.transactions.push(transaction);
+      return transaction;
+    },
+    _currentTransaction: function() {
+      var length = this.transactions.length;
+      if (length) return this.transactions[length-1];
+      return this._createTransaction(true);
+    },
+    beginTransaction: function() {
+      this._createTransaction();
+    },
+    commitTransaction: function() {
+      var transaction = this.transactions.pop();
+    },
+    disableAnimation: function(disable) {
+      var transaction = this._currentTransaction();
+      transaction.disableAnimation = disable;
+      this._startTicking();
+    },
+    
     registerTarget: function(target) {
-      if (!this.targets.length) raf(this.ticker.bind(this));
+      if (!this.ticking) this._startTicking();
       var index = this.targets.indexOf(target);
       if (index < 0) this.targets.push(target);
     },
@@ -52,8 +87,19 @@ var Shoe = (function() {
       var index = this.targets.indexOf(target);
       if (index > -1) this.targets.splice(index, 1);
     },
-    
+    _startTicking: function() {
+      if (!this.ticking) {
+        this.ticking = true;
+        raf(this.ticker.bind(this));
+      }
+    },
     ticker: function() {
+      this.ticking = false;
+      var length = this.transactions.length;
+      if (length) {
+        var transaction = this.transactions[length-1];
+        if (transaction.automaticallyCommit) this.commitTransaction();
+      }
       this.targets.forEach( function(target) {
         var shoeRender = target.shoeRender;
         if (isFunction(shoeRender)) {
@@ -62,12 +108,14 @@ var Shoe = (function() {
           render();
         }
       }.bind(this));
-      if (this.targets.length) raf(this.ticker.bind(this));
+      if (this.targets.length) this._startTicking();
     }
   }
+  var shoeContext = new ShoeContext();
   
   
-  function ShoeLayer(context) {
+  
+  function ShoeLayer() { // Meant to be subclassed to provide implicit animation and clear distinction between model/presentation values
     var model = {};
     var presentation = {};
     var allAnimations = [];
@@ -104,29 +152,32 @@ var Shoe = (function() {
             presentation[name] = value;
           } else {
             var animation;
-            var description = this.shoeAnimationForKey(name,value,this);
-            var defaultAnimation = defaultAnimations[name];
-            if (description && description instanceof ShoeValue) {
-              animation = description.copy();
-            } else if (description && typeof description === "object" && isFunction(defaultAnimation)) {
-              animation = new defaultAnimation(description);
-              if (!animation instanceof ShoeValue) animation = null;
-            } else if (defaultAnimation instanceof ShoeValue) {
-              animation = defaultAnimation.copy();
-              if (description && typeof description === "object") {
-                Object.keys(description).forEach( function(key) {
-                  animation[key] = description[key];
-                });
+            var transaction = this.context._currentTransaction();
+            if (!transaction.disableAnimation) {
+              var description = this.shoeAnimationForKey(name,value,this);
+              var defaultAnimation = defaultAnimations[name];
+              if (description && description instanceof ShoeValue) {
+                animation = description.copy();
+              } else if (description && typeof description === "object" && isFunction(defaultAnimation)) {
+                animation = new defaultAnimation(description);
+                if (!animation instanceof ShoeValue) animation = null;
+              } else if (defaultAnimation instanceof ShoeValue) {
+                animation = defaultAnimation.copy();
+                if (description && typeof description === "object") {
+                  Object.keys(description).forEach( function(key) {
+                    animation[key] = description[key];
+                  });
+                }
               }
-            }
-            if (animation) {
-              if (animation.property === null || animation.property === undefined) animation.property = name;
-              if (animation.from === null || animation.from === undefined) {
-                if (animation.absolute === true) animation.from = this.layer[name];
-                else animation.from = model[name];
+              if (animation) {
+                if (animation.property === null || animation.property === undefined) animation.property = name;
+                if (animation.from === null || animation.from === undefined) {
+                  if (animation.absolute === true) animation.from = this.layer[name];
+                  else animation.from = model[name];
+                }
+                if (animation.to === null || animation.to === undefined) animation.to = value;
+                this.addAnimation(animation); // this will copy a second time. 
               }
-              if (animation.to === null || animation.to === undefined) animation.to = value;
-              this.addAnimation(animation); // this will copy a second time. 
             }
             model[name] = value;
             if (!animation) { // need to manually call render on property value change without animation. transactions.
@@ -180,8 +231,10 @@ var Shoe = (function() {
           var property = animation.property;
           var value = animation[animation.type]; // awkward
           if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model[property];
+          
           if (animation.absolute === true) compositor[property] = value;
           else compositor[property] = animation.add(compositor[property],value);
+          
           if (animation.finished === true) finishedAnimations.push(animation);
         }.bind(this));
         
@@ -196,6 +249,8 @@ var Shoe = (function() {
         return proxy;
       }
     });
+    this.needsDisplay = function() { // NOT IMPLEMENTED, obviously
+    }
     
     this.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
       //if (name === null || name === undefined) name = "" + animation.property + animationCount++; // need to implement auto increment key
@@ -203,8 +258,12 @@ var Shoe = (function() {
       if (!allAnimations.length) context.registerTarget(this);
       var copy = animation.copy();
       copy.number = animationNumber++;
-      if (name !== null && name !== undefined) namedAnimations[name] = copy;
       allAnimations.push(copy);
+      if (name !== null && name !== undefined) {
+        var previous = namedAnimations[name];
+        if (previous) this._removeAnimationInstance(previous); // after pushing to allAnimations, so context doesn't stop ticking
+        namedAnimations[name] = copy;
+      }
       shouldSortAnimations = true;
       copy.runActionForLayerForKey(this, name);
     }
@@ -232,14 +291,14 @@ var Shoe = (function() {
       return null;
     }
     
-    this.context = context;
-    ShoeContext.call(this);
+    this.context = shoeContext; // awkward
   }
-  ShoeLayer.prototype = Object.create(ShoeContext.prototype);
+  ShoeLayer.prototype = {};
   ShoeLayer.prototype.constructor = ShoeLayer;
   ShoeLayer.prototype.shoeAnimationForKey = function(key,value,target) {
     return null;
   };
+  
   
   
   function ShoeValue(settings) {
@@ -256,7 +315,7 @@ var Shoe = (function() {
     this.speed; // float. Defaults to 1. RECONSIDER. Pausing currently not possible like in Core Animation. Layers have speed, beginTime, timeOffset!
     this.repeatCount = 1; // float >= 0. Defaults to 1. Maybe should be named "iterations"
     this.autoreverse; // boolean. When repeatCount > 1. Easing also reversed. Maybe should be named "autoreverses", maybe should be camelCased
-    this.fillMode; // string. Defaults to "none". NOT IMPLEMENTED. Needs better compositing and refinement of deregisterTarget. maybe should be named "fill"
+    this.fillMode; // string. Defaults to "none". NOT FINISHED. "forwards" and "backwards" are "both". maybe should be named "fill". maybe should just be a boolean
     this.absolute; // boolean. Defaults to false.
     this.index = 0; // float. Custom compositing order. Defaults to 0.
     this.delay; // NOT IMPLEMENTED
@@ -267,14 +326,18 @@ var Shoe = (function() {
     }.bind(this));
     
     this.type = "value"; // might be needed for GreenSock compatibility
-    this[this.type] = this.zero();
+    //this[this.type] = this.zero();
     
     Object.defineProperty(this, this.type, { // INTERPOLATION
       get: function() {
         if (this.startTime === null || this.startTime === undefined) return this.zero();
-        var speed = this.speed; // might make speed a property of layer not animation, might not because no sublayers / layer hierarcy
-        var now = performance.now() / 1000; // need global transaction time
+        
+        var context = shoeContext;
+        var transaction = shoeContext._currentTransaction();
+        var now = transaction.time;
+        
         var elapsed = now - this.startTime;
+        var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy
         var iterationProgress = 1;
         var combinedProgress = 1;
         var iterationDuration = this.duration;
@@ -294,6 +357,7 @@ var Shoe = (function() {
         }
         if (inReverse) iterationProgress = 1-iterationProgress; // easing is also reversed
         if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
+        
         if (this.absolute === true) return this.interpolate(this.from,this.to,iterationProgress);
         return this.interpolate(this.delta,this.zero(),iterationProgress);
       }
@@ -307,21 +371,25 @@ var Shoe = (function() {
       if (this.repeatCount === null || this.repeatCount === undefined) this.repeatCount = 1; // negative values have no effect
       if (this.absolute !== true) this.delta = this.add(this.from,this.invert(this.to));
       this.onend = function() { // should swap the naming
-        if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
-        else layer._removeAnimationInstance(this);
+        if (!this.fillMode || this.fillMode !== "none") {
+          if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
+          else layer._removeAnimationInstance(this);
+        }
         if (isFunction(this.completion)) this.completion();
+        this.onend = null; // lazy way to keep compositor from calling this twice, during fill phase
       }.bind(this);
       if (this.startTime === null || this.startTime === undefined) this.startTime = performance.now() / 1000;
     }
   }
   ShoeValue.prototype = {
     copy: function() {
+      //return Object.create(this);
       var constructor = this.constructor;
       var copy = new constructor(this.settings);
       var keys = Object.getOwnPropertyNames(this);
       var length = keys.length;
       for (var i = 0; i < length; i++) {
-        Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(this, keys[i]));
+        if (keys[i] !== "value") Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(this, keys[i]));
       }
       return copy;
     },
@@ -338,6 +406,7 @@ var Shoe = (function() {
       throw new Error("Must implement function: interpolate(a,b,progress)");
     }
   }
+  
   
   
   function ShoeNumber(settings) {
@@ -357,6 +426,7 @@ var Shoe = (function() {
     return a + (b-a) * progress;
   };
   ShoeNumber.prototype.constructor = ShoeNumber;
+  
   
   
   function ShoeScale(settings) {
@@ -379,11 +449,14 @@ var Shoe = (function() {
   ShoeScale.prototype.constructor = ShoeScale;
   
   
+  
   return {
     Layer : ShoeLayer,
-    Context : ShoeContext,
     NumberType : ShoeNumber,
     ScaleType : ShoeScale,
-    ValueType : ShoeValue
+    ValueType : ShoeValue,
+    beginTransaction: shoeContext.beginTransaction.bind(shoeContext),
+    commitTransaction: shoeContext.commitTransaction.bind(shoeContext),
+    disableAnimation: shoeContext.disableAnimation.bind(shoeContext)
   }
 })();
