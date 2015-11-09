@@ -101,11 +101,11 @@ var Shoe = (function() {
         if (transaction.automaticallyCommit) this.commitTransaction();
       }
       this.targets.forEach( function(target) {
-        var shoeRender = target.shoeRender;
-        if (isFunction(shoeRender)) {
+        var render = target.render;
+        if (isFunction(render)) {
           var layer = target.layer || target;
-          var render = shoeRender.bind(layer);
-          render();
+          var boundRender = render.bind(layer);
+          boundRender();
         }
       }.bind(this));
       if (this.targets.length) this._startTicking();
@@ -154,7 +154,7 @@ var Shoe = (function() {
             var animation;
             var transaction = this.context._currentTransaction();
             if (!transaction.disableAnimation) {
-              var description = this.shoeAnimationForKey(name,value,this);
+              var description = this.animationForKey(name,value,this);
               var defaultAnimation = defaultAnimations[name];
               if (description && description instanceof ShoeValue) {
                 animation = description.copy();
@@ -181,11 +181,11 @@ var Shoe = (function() {
             }
             model[name] = value;
             if (!animation) { // need to manually call render on property value change without animation. transactions.
-              var shoeRender = this.shoeRender;
-              if (isFunction(shoeRender)) {
+              var render = this.render;
+              if (isFunction(render)) {
                 var layer = this.layer || this;
-                var render = shoeRender.bind(layer);
-                render();
+                var boundRender = render.bind(layer);
+                boundRender();
               }
             }
           }
@@ -265,7 +265,7 @@ var Shoe = (function() {
         namedAnimations[name] = copy;
       }
       shouldSortAnimations = true;
-      copy.runActionForLayerForKey(this, name);
+      copy.runAnimation(this, name);
     }
     this.addAnimationNamed = this.addAnimation;
     
@@ -295,13 +295,21 @@ var Shoe = (function() {
   }
   ShoeLayer.prototype = {};
   ShoeLayer.prototype.constructor = ShoeLayer;
-  ShoeLayer.prototype.shoeAnimationForKey = function(key,value,target) {
+  ShoeLayer.prototype.animationForKey = function(key,value,target) {
     return null;
   };
   
   
   
-  function ShoeValue(settings) {
+  function GraphicsLayer() {
+    // This should more closely resemble CALayer, ShoeLayer just focuses on animations and triggering them
+    // This should have its own canvas element, and renderInContext: instead of render:
+    // Provide frame and bounds, maybe allow sublayers.
+  }
+  
+  
+  
+  function ShoeValue(settings) { // The base animation class
     if (this.constructor === ShoeValue) {
       throw new Error("Shoe.ValueType is an abstract base class.");
     }
@@ -357,6 +365,7 @@ var Shoe = (function() {
         }
         if (inReverse) iterationProgress = 1-iterationProgress; // easing is also reversed
         if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
+        else if (this.easing !== "linear") iterationProgress = 0.5-(Math.cos(iterationProgress * Math.PI) / 2);
         
         if (this.absolute === true) return this.interpolate(this.from,this.to,iterationProgress);
         return this.interpolate(this.delta,this.zero(),iterationProgress);
@@ -365,7 +374,7 @@ var Shoe = (function() {
     
     this.delta;
     this.onend;
-    this.runActionForLayerForKey = function(layer,key) {
+    this.runAnimation = function(layer,key) {
       if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.repeatCount === null || this.repeatCount === undefined) this.repeatCount = 1; // negative values have no effect
