@@ -227,9 +227,11 @@ var Shoe = (function() {
           shouldSortAnimations = false;
         }
         
+        var transaction = this.context._currentTransaction();
+        var now = transaction.time;
         allAnimations.forEach( function(animation) {
           var property = animation.property;
-          var value = animation[animation.type]; // awkward
+          var value = animation.getAnimatedValue(now);
           if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model[property];
           
           if (animation.absolute === true) compositor[property] = value;
@@ -333,44 +335,34 @@ var Shoe = (function() {
       this[key] = settings[key];
     }.bind(this));
     
-    this.type = "value"; // might be needed for GreenSock compatibility
-    //this[this.type] = this.zero();
-    
-    Object.defineProperty(this, this.type, { // INTERPOLATION
-      get: function() {
-        if (this.startTime === null || this.startTime === undefined) return this.zero();
-        
-        var context = shoeContext;
-        var transaction = shoeContext._currentTransaction();
-        var now = transaction.time;
-        
-        var elapsed = now - this.startTime;
-        var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy
-        var iterationProgress = 1;
-        var combinedProgress = 1;
-        var iterationDuration = this.duration;
-        var combinedDuration = iterationDuration * this.repeatCount;
-        if (combinedDuration) {
-          iterationProgress = elapsed * speed / iterationDuration;
-          combinedProgress = elapsed * speed / combinedDuration;
-        }
-        if (combinedProgress >= 1) {
-          iterationProgress = 1;
-          this.finished = true;
-        }
-        var inReverse = 0; // falsy
-        if (!this.finished) {
-          if (this.autoreverse === true) inReverse = Math.floor(iterationProgress) % 2;
-          iterationProgress = iterationProgress % 1; // modulus for repeatCount
-        }
-        if (inReverse) iterationProgress = 1-iterationProgress; // easing is also reversed
-        if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
-        else if (this.easing !== "linear") iterationProgress = 0.5-(Math.cos(iterationProgress * Math.PI) / 2);
-        
-        if (this.absolute === true) return this.interpolate(this.from,this.to,iterationProgress);
-        return this.interpolate(this.delta,this.zero(),iterationProgress);
+    this.getAnimatedValue = function(now) {
+      if (this.startTime === null || this.startTime === undefined) return this.zero();
+      var elapsed = now - this.startTime;
+      var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy
+      var iterationProgress = 1;
+      var combinedProgress = 1;
+      var iterationDuration = this.duration;
+      var combinedDuration = iterationDuration * this.repeatCount;
+      if (combinedDuration) {
+        iterationProgress = elapsed * speed / iterationDuration;
+        combinedProgress = elapsed * speed / combinedDuration;
       }
-    });
+      if (combinedProgress >= 1) {
+        iterationProgress = 1;
+        this.finished = true;
+      }
+      var inReverse = 0; // falsy
+      if (!this.finished) {
+        if (this.autoreverse === true) inReverse = Math.floor(iterationProgress) % 2;
+        iterationProgress = iterationProgress % 1; // modulus for repeatCount
+      }
+      if (inReverse) iterationProgress = 1-iterationProgress; // easing is also reversed
+      if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
+      else if (this.easing !== "linear") iterationProgress = 0.5-(Math.cos(iterationProgress * Math.PI) / 2);
+      
+      if (this.absolute === true) return this.interpolate(this.from,this.to,iterationProgress);
+      return this.interpolate(this.delta,this.zero(),iterationProgress);
+    }
     
     this.delta;
     this.onend;
@@ -398,7 +390,7 @@ var Shoe = (function() {
       var keys = Object.getOwnPropertyNames(this);
       var length = keys.length;
       for (var i = 0; i < length; i++) {
-        if (keys[i] !== "value") Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(this, keys[i]));
+        Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(this, keys[i]));
       }
       return copy;
     },
