@@ -421,6 +421,7 @@ var Shoe = (function() {
     ShoeValue.call(this,settings);
   }
   ShoeNumber.prototype = Object.create(ShoeValue.prototype);
+  ShoeNumber.prototype.constructor = ShoeNumber;
   ShoeNumber.prototype.zero = function() {
     return 0;
   };
@@ -433,7 +434,6 @@ var Shoe = (function() {
   ShoeNumber.prototype.interpolate = function(a,b,progress) {
     return a + (b-a) * progress;
   };
-  ShoeNumber.prototype.constructor = ShoeNumber;
   
   
   
@@ -441,6 +441,7 @@ var Shoe = (function() {
     ShoeValue.call(this,settings);
   }
   ShoeScale.prototype = Object.create(ShoeValue.prototype);
+  ShoeScale.prototype.constructor = ShoeScale;
   ShoeScale.prototype.zero = function() {
     return 1;
   };
@@ -454,7 +455,47 @@ var Shoe = (function() {
   ShoeScale.prototype.interpolate = function(a,b,progress) {
     return a + (b-a) * progress;
   };
-  ShoeScale.prototype.constructor = ShoeScale;
+  
+  
+  
+  function ShoeArray(type,length,settings) {
+    Shoe.ValueType.call(this,settings);
+    if (isFunction(type)) type = new type(settings);
+    this.type = type;
+    this.length = length;
+  }
+  ShoeArray.prototype = Object.create(ShoeValue.prototype);
+  ShoeArray.prototype.constructor = ShoeArray;
+  ShoeArray.prototype.zero = function() {
+    var array = [];
+    var i = this.length;
+    while (i--) array.push(this.type.zero());
+    return array;
+  };
+  ShoeArray.prototype.add = function(a,b) {
+    var array = [];
+    var length = this.length;
+    for (var i = 0; i < length; i++) {
+      array.push(this.type.add(a[i],b[i]));
+    }
+    return array;
+  };
+  ShoeArray.prototype.invert = function(a) {
+    var array = [];
+    var length = this.length;
+    for (var i = 0; i< length; i++) {
+      array.push(this.type.invert(a[i]));
+    }
+    return array;
+  };
+  ShoeArray.prototype.interpolate = function(a,b,progress) {
+    var array = [];
+    var length = this.length;
+    for (var i = 0; i< length; i++) {
+      array.push(this.type.interpolate(a[i],b[i],progress));
+    }
+    return array;
+  };
   
   
   
@@ -463,6 +504,7 @@ var Shoe = (function() {
     NumberType : ShoeNumber,
     ScaleType : ShoeScale,
     ValueType : ShoeValue,
+    ArrayType : ShoeArray,
     beginTransaction: shoeContext.beginTransaction.bind(shoeContext),
     commitTransaction: shoeContext.commitTransaction.bind(shoeContext),
     disableAnimation: shoeContext.disableAnimation.bind(shoeContext)
