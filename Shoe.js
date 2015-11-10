@@ -103,7 +103,7 @@ var Shoe = (function() {
       this.targets.forEach( function(target) {
         var render = target.render;
         if (isFunction(render)) {
-          var layer = target.layer || target;
+          var layer = target.presentation || target;
           var boundRender = render.bind(layer);
           boundRender();
         }
@@ -134,7 +134,7 @@ var Shoe = (function() {
         return;
       }
       if (defaultAnimation) defaultAnimations[name] = defaultAnimation;
-      else if (defaultAnimations[name]) delete defaultAnimations[name];
+      else if (defaultAnimations[name]) delete defaultAnimations[name]; // property is still animatable
       
       model[name] = this[name];
       Object.defineProperty(this, name, { // ACCESSORS
@@ -154,7 +154,9 @@ var Shoe = (function() {
             var animation;
             var transaction = this.context._currentTransaction();
             if (!transaction.disableAnimation) {
-              var description = this.animationForKey(name,value,this);
+              var description;
+              var animationForKey = this.animationForKey;
+              if (isFunction(animationForKey)) description = this.animationForKey(name,value,this); // If prototype chain is not properly constructed, Shoe.Layer animationForKey will not exist.
               var defaultAnimation = defaultAnimations[name];
               if (description && description instanceof ShoeValue) {
                 animation = description.copy();
@@ -172,7 +174,7 @@ var Shoe = (function() {
               if (animation) {
                 if (animation.property === null || animation.property === undefined) animation.property = name;
                 if (animation.from === null || animation.from === undefined) {
-                  if (animation.absolute === true) animation.from = this.layer[name];
+                  if (animation.absolute === true) animation.from = this.presentation[name];
                   else animation.from = model[name];
                 }
                 if (animation.to === null || animation.to === undefined) animation.to = value;
@@ -183,7 +185,7 @@ var Shoe = (function() {
             if (!animation) { // need to manually call render on property value change without animation. transactions.
               var render = this.render;
               if (isFunction(render)) {
-                var layer = this.layer || this;
+                var layer = this.presentation || this;
                 var boundRender = render.bind(layer);
                 boundRender();
               }
@@ -206,7 +208,7 @@ var Shoe = (function() {
       }
     });
     var modelLayer = this;
-    Object.defineProperty(this, "layer", { // COMPOSITING. Have separate compositor object?
+    Object.defineProperty(this, "presentation", { // COMPOSITING. Have separate compositor object?
       get: function() { // need transactions and cache presentation layer
         if (this._isProxy) return modelLayer;
         var compositor = {};
@@ -287,6 +289,11 @@ var Shoe = (function() {
     }
     this.removeAnimationNamed = this.removeAnimation;
     
+    this.removeAllAnimations = function() {
+      allAnimations = [];
+      namedAnimations = {};
+    }
+    
     this.animationNamed = function(name) {
       var animation = namedAnimations[name];
       if (animation) return animation.copy();
@@ -323,8 +330,8 @@ var Shoe = (function() {
     this.duration; // float. Need to validate/ensure float >= 0. Defaults to 0.
     this.easing; // NOT FINISHED. currently callback function only, need cubic bezier and presets. Defaults to linear
     this.speed; // float. Defaults to 1. RECONSIDER. Pausing currently not possible like in Core Animation. Layers have speed, beginTime, timeOffset!
-    this.repeatCount = 1; // float >= 0. Defaults to 1. Maybe should be named "iterations"
-    this.autoreverse; // boolean. When repeatCount > 1. Easing also reversed. Maybe should be named "autoreverses", maybe should be camelCased
+    this.iterations = 1; // float >= 0. Defaults to 1.
+    this.autoreverse; // boolean. When iterations > 1. Easing also reversed. Maybe should be named "autoreverses", maybe should be camelCased
     this.fillMode; // string. Defaults to "none". NOT FINISHED. "forwards" and "backwards" are "both". maybe should be named "fill". maybe should just be a boolean
     this.absolute; // boolean. Defaults to false.
     this.index = 0; // float. Custom compositing order. Defaults to 0.
@@ -338,11 +345,11 @@ var Shoe = (function() {
     this.getAnimatedValue = function(now) {
       if (this.startTime === null || this.startTime === undefined) return this.zero();
       var elapsed = now - this.startTime;
-      var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy
+      var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy yet
       var iterationProgress = 1;
       var combinedProgress = 1;
       var iterationDuration = this.duration;
-      var combinedDuration = iterationDuration * this.repeatCount;
+      var combinedDuration = iterationDuration * this.iterations;
       if (combinedDuration) {
         iterationProgress = elapsed * speed / iterationDuration;
         combinedProgress = elapsed * speed / combinedDuration;
@@ -354,7 +361,7 @@ var Shoe = (function() {
       var inReverse = 0; // falsy
       if (!this.finished) {
         if (this.autoreverse === true) inReverse = Math.floor(iterationProgress) % 2;
-        iterationProgress = iterationProgress % 1; // modulus for repeatCount
+        iterationProgress = iterationProgress % 1; // modulus for iterations
       }
       if (inReverse) iterationProgress = 1-iterationProgress; // easing is also reversed
       if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
@@ -369,10 +376,10 @@ var Shoe = (function() {
     this.runAnimation = function(layer,key) {
       if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
-      if (this.repeatCount === null || this.repeatCount === undefined) this.repeatCount = 1; // negative values have no effect
+      if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
       if (this.absolute !== true) this.delta = this.add(this.from,this.invert(this.to));
       this.onend = function() { // should swap the naming
-        if (!this.fillMode || this.fillMode !== "none") {
+        if (!this.fillMode || this.fillMode === "none") {
           if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
           else layer._removeAnimationInstance(this);
         }
