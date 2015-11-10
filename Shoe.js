@@ -460,8 +460,8 @@ var Shoe = (function() {
   
   function ShoeArray(type,length,settings) {
     Shoe.ValueType.call(this,settings);
-    if (isFunction(type)) type = new type(settings);
     this.type = type;
+    if (isFunction(type)) this.type = new type(settings);
     this.length = length;
   }
   ShoeArray.prototype = Object.create(ShoeValue.prototype);
@@ -474,24 +474,21 @@ var Shoe = (function() {
   };
   ShoeArray.prototype.add = function(a,b) {
     var array = [];
-    var length = this.length;
-    for (var i = 0; i < length; i++) {
+    for (var i = 0; i < this.length; i++) {
       array.push(this.type.add(a[i],b[i]));
     }
     return array;
   };
   ShoeArray.prototype.invert = function(a) {
     var array = [];
-    var length = this.length;
-    for (var i = 0; i< length; i++) {
+    for (var i = 0; i < this.length; i++) {
       array.push(this.type.invert(a[i]));
     }
     return array;
   };
   ShoeArray.prototype.interpolate = function(a,b,progress) {
     var array = [];
-    var length = this.length;
-    for (var i = 0; i< length; i++) {
+    for (var i = 0; i < this.length; i++) {
       array.push(this.type.interpolate(a[i],b[i],progress));
     }
     return array;
