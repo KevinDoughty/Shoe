@@ -116,8 +116,8 @@ var Shoe = (function() {
   
   
   function ShoeLayer() { // Meant to be subclassed to provide implicit animation and clear distinction between model/presentation values
-    var model = {};
-    var presentation = {};
+    var modelDict = {};
+    var registeredProperties =[];
     var allAnimations = [];
     var namedAnimations = {};
     var defaultAnimations = {};
@@ -126,6 +126,7 @@ var Shoe = (function() {
     var animationNumber = 0; // order added
     
     this.registerAnimatableProperty = function(name, defaultValue) {
+      registeredProperties.push(name);
       var defaultAnimation = defaultValue;
       if (isFunction(defaultValue)) defaultAnimation = new defaultValue();
       var descriptor = Object.getOwnPropertyDescriptor(this, name);
@@ -136,21 +137,15 @@ var Shoe = (function() {
       if (defaultAnimation) defaultAnimations[name] = defaultAnimation;
       else if (defaultAnimations[name]) delete defaultAnimations[name]; // property is still animatable
       
-      model[name] = this[name];
+      modelDict[name] = this[name];
       Object.defineProperty(this, name, { // ACCESSORS
         get: function() {
-          if (this._isProxy) { // do this differently
-            var value = presentation[name];
-            if (value === null || value === undefined) return model[name];
-            return value;
-          } else {
-            return model[name];
-          }
+          if (this._isProxy) throw new Error("PresentationLayer getter should not be used for property:"+name+";");
+          else return modelDict[name];
         },
         set: function(value) {
-          if (this._isProxy) { // do this differently
-            presentation[name] = value;
-          } else {
+          if (this._isProxy) throw new Error("PresentationLayer setter should not be used for property:"+name+";");
+          else {
             var animation;
             var transaction = this.context._currentTransaction();
             if (!transaction.disableAnimation) {
@@ -174,21 +169,17 @@ var Shoe = (function() {
               if (animation) {
                 if (animation.property === null || animation.property === undefined) animation.property = name;
                 if (animation.from === null || animation.from === undefined) {
-                  if (animation.absolute === true) animation.from = this.presentation[name];
-                  else animation.from = model[name];
+                  if (animation.absolute === true) animation.from = this.presentation[name]; // use presentation layer
+                  else animation.from = modelDict[name];
                 }
                 if (animation.to === null || animation.to === undefined) animation.to = value;
                 this.addAnimation(animation); // this will copy a second time. 
               }
             }
-            model[name] = value;
+            modelDict[name] = value;
             if (!animation) { // need to manually call render on property value change without animation. transactions.
-              var render = this.render;
-              if (isFunction(render)) {
-                var layer = this.presentation || this;
-                var boundRender = render.bind(layer);
-                boundRender();
-              }
+              var layer = this.presentation || this;
+              if (isFunction(layer.render)) layer.render();
             }
           }
         }
@@ -207,10 +198,13 @@ var Shoe = (function() {
         return Object.keys(namedAnimations);
       }
     });
+    
     var modelLayer = this;
     Object.defineProperty(this, "presentation", { // COMPOSITING. Have separate compositor object?
       get: function() { // need transactions and cache presentation layer
-        if (this._isProxy) return modelLayer;
+        //if (this._isProxy) return modelLayer;
+        if (this._isProxy) return this; // need both presentationLayer and modelLayer getters
+        
         var compositor = {};
         var finishedAnimations = [];
         var proxy = Object.create(this);
@@ -231,10 +225,11 @@ var Shoe = (function() {
         
         var transaction = this.context._currentTransaction();
         var now = transaction.time;
+        
         allAnimations.forEach( function(animation) {
           var property = animation.property;
           var value = animation.getAnimatedValue(now);
-          if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model[property];
+          if (compositor[property] === null || compositor[property] === undefined) compositor[property] = modelDict[property];
           
           if (animation.absolute === true) compositor[property] = value;
           else compositor[property] = animation.add(compositor[property],value);
@@ -242,10 +237,17 @@ var Shoe = (function() {
           if (animation.finished === true) finishedAnimations.push(animation);
         }.bind(this));
         
-        Object.keys(compositor).forEach( function(property) {
-          proxy[property] = compositor[property];
+        var compositorKeys = Object.keys(compositor);
+        compositorKeys.forEach( function(property) {
+          Object.defineProperty(proxy, property, {value:compositor[property]});
         }.bind(this));
         
+        registeredProperties.forEach( function(property) {
+          if (compositorKeys.indexOf(property) === -1) {
+            Object.defineProperty(proxy, property, {value:modelDict[property]});
+          }
+        }.bind(this));
+
         finishedAnimations.forEach( function(animation) {
           if (isFunction(animation.onend)) animation.onend();
         });
@@ -253,7 +255,10 @@ var Shoe = (function() {
         return proxy;
       }
     });
-    this.needsDisplay = function() { // NOT IMPLEMENTED, obviously
+    
+    this.needsDisplay = function() {
+      // NOT IMPLEMENTED, obviously
+      // This should be used instead of directly calling render
     }
     
     this.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
@@ -312,8 +317,11 @@ var Shoe = (function() {
   
   function GraphicsLayer() {
     // This should more closely resemble CALayer, ShoeLayer just focuses on animations and triggering them
-    // This should have its own canvas element, and renderInContext: instead of render:
-    // Provide frame and bounds, maybe allow sublayers.
+    // This should have renderInContext: instead of render:
+    // Provide frame and bounds, allow sublayers.
+    // apply transforms.
+    // all drawing into top level layer backed object that holds canvas.
+    // Only top layer has a canvas element
   }
   
   
