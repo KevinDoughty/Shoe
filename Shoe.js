@@ -117,13 +117,35 @@ var Shoe = (function() {
   
   function ShoeLayer() { // Meant to be subclassed to provide implicit animation and clear distinction between model/presentation values
     var modelDict = {};
-    var registeredProperties =[];
+    var registeredProperties = [];
     var allAnimations = [];
     var namedAnimations = {};
     var defaultAnimations = {};
     //var animationCount = 0; // need to implement auto increment key
     var shouldSortAnimations = false;
     var animationNumber = 0; // order added
+    
+    this.implicitAnimation = function(property,value) {
+      var animation;
+      var description;
+      var animationForKey = this.animationForKey;
+      if (isFunction(animationForKey)) description = this.animationForKey(property,value,this); // If prototype chain is not properly constructed, Shoe.Layer animationForKey will not exist.
+      var defaultAnimation = defaultAnimations[property];
+      if (description && description instanceof ShoeValue) {
+        animation = description.copy();
+      } else if (description && typeof description === "object" && isFunction(defaultAnimation)) {
+        animation = new defaultAnimation(description);
+        if (!animation instanceof ShoeValue) animation = null;
+      } else if (defaultAnimation instanceof ShoeValue) {
+        animation = defaultAnimation.copy();
+        if (description && typeof description === "object") {
+          Object.keys(description).forEach( function(key) {
+            animation[key] = description[key];
+          });
+        }
+      }
+      return animation;
+    }
     
     this.registerAnimatableProperty = function(name, defaultValue) {
       registeredProperties.push(name);
@@ -149,27 +171,11 @@ var Shoe = (function() {
             var animation;
             var transaction = this.context._currentTransaction();
             if (!transaction.disableAnimation) {
-              var description;
-              var animationForKey = this.animationForKey;
-              if (isFunction(animationForKey)) description = this.animationForKey(name,value,this); // If prototype chain is not properly constructed, Shoe.Layer animationForKey will not exist.
-              var defaultAnimation = defaultAnimations[name];
-              if (description && description instanceof ShoeValue) {
-                animation = description.copy();
-              } else if (description && typeof description === "object" && isFunction(defaultAnimation)) {
-                animation = new defaultAnimation(description);
-                if (!animation instanceof ShoeValue) animation = null;
-              } else if (defaultAnimation instanceof ShoeValue) {
-                animation = defaultAnimation.copy();
-                if (description && typeof description === "object") {
-                  Object.keys(description).forEach( function(key) {
-                    animation[key] = description[key];
-                  });
-                }
-              }
+              animation = this.implicitAnimation(name,value);
               if (animation) {
                 if (animation.property === null || animation.property === undefined) animation.property = name;
                 if (animation.from === null || animation.from === undefined) {
-                  if (animation.absolute === true) animation.from = this.presentation[name]; // use presentation layer
+                  if (animation.absolute === true || animation.blend === "absolute") animation.from = this.presentation[name]; // use presentation layer
                   else animation.from = modelDict[name];
                 }
                 if (animation.to === null || animation.to === undefined) animation.to = value;
@@ -200,7 +206,7 @@ var Shoe = (function() {
     });
     
     var modelLayer = this;
-    Object.defineProperty(this, "presentation", { // COMPOSITING. Have separate compositor object?
+    Object.defineProperty(this, "presentation", { // COMPOSITING. Rename "presentationLayer"? Have separate compositor object?
       get: function() { // need transactions and cache presentation layer
         //if (this._isProxy) return modelLayer;
         if (this._isProxy) return this; // need both presentationLayer and modelLayer getters
@@ -229,7 +235,11 @@ var Shoe = (function() {
         allAnimations.forEach( function(animation) {
           var property = animation.property;
           var value = animation.getAnimatedValue(now);
-          if (compositor[property] === null || compositor[property] === undefined) compositor[property] = modelDict[property];
+          var model = modelDict[property];
+          var defaultAnimation = defaultAnimations[property];
+          if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") model = defaultAnimation.zero();
+          
+          if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model;
           
           if (animation.absolute === true) compositor[property] = value;
           else compositor[property] = animation.add(compositor[property],value);
@@ -244,7 +254,10 @@ var Shoe = (function() {
         
         registeredProperties.forEach( function(property) {
           if (compositorKeys.indexOf(property) === -1) {
-            Object.defineProperty(proxy, property, {value:modelDict[property]});
+            var value = modelDict[property];
+            var defaultAnimation = defaultAnimations[property];
+            if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") value = defaultAnimation.zero();
+            Object.defineProperty(proxy, property, {value:value});
           }
         }.bind(this));
 
@@ -341,9 +354,10 @@ var Shoe = (function() {
     this.iterations = 1; // float >= 0. Defaults to 1.
     this.autoreverse; // boolean. When iterations > 1. Easing also reversed. Maybe should be named "autoreverses", maybe should be camelCased
     this.fillMode; // string. Defaults to "none". NOT FINISHED. "forwards" and "backwards" are "both". maybe should be named "fill". maybe should just be a boolean
-    this.absolute; // boolean. Defaults to false.
+    this.absolute; // boolean. Defaults to false. DEPRECATED. Use blend instead
     this.index = 0; // float. Custom compositing order. Defaults to 0.
     this.delay; // NOT IMPLEMENTED
+    this.blend = "relative"; // also "absolute" or "zero"
     this.finished = false;
     this.startTime; // float
     if (settings) Object.keys(settings).forEach( function(key) {
@@ -385,7 +399,7 @@ var Shoe = (function() {
       if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
-      if (this.absolute !== true) this.delta = this.add(this.from,this.invert(this.to));
+      if (this.absolute !== true && this.blend !== "absolute") this.delta = this.add(this.from,this.invert(this.to));
       this.onend = function() { // should swap the naming
         if (!this.fillMode || this.fillMode === "none") {
           if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
@@ -410,16 +424,16 @@ var Shoe = (function() {
       return copy;
     },
     zero: function() {
-      throw new Error("Must implement function: zero()");
+      throw new Error("Shoe.ValueType subclasses must implement function: zero()");
     },
     invert: function() {
-      throw new Error("Must implement function: invert(a)");
+      throw new Error("Shoe.ValueType subclasses must implement function: invert(a)");
     },
     add: function() {
-      throw new Error("Must implement function: add(a,b)");
+      throw new Error("Shoe.ValueType subclasses must implement function: add(a,b)");
     },
     interpolate: function() {
-      throw new Error("Must implement function: interpolate(a,b,progress)");
+      throw new Error("Shoe.ValueType subclasses must implement function: interpolate(a,b,progress)");
     }
   }
   
