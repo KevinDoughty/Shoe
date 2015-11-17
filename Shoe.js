@@ -115,7 +115,7 @@ var Shoe = (function() {
   
   
   
-  function ShoeLayer() { // Meant to be subclassed to provide implicit animation and clear distinction between model/presentation values
+  function Layerize(receiver) {
     var modelDict = {};
     var registeredProperties = [];
     var allAnimations = [];
@@ -125,11 +125,11 @@ var Shoe = (function() {
     var shouldSortAnimations = false;
     var animationNumber = 0; // order added
     
-    this.implicitAnimation = function(property,value) {
+    var implicitAnimation = function(property,value) {
       var animation;
       var description;
-      var animationForKey = this.animationForKey;
-      if (isFunction(animationForKey)) description = this.animationForKey(property,value,this); // If prototype chain is not properly constructed, Shoe.Layer animationForKey will not exist.
+      var animationForKey = receiver.animationForKey;
+      if (isFunction(animationForKey)) description = receiver.animationForKey(property,value,receiver); // If prototype chain is not properly constructed, Shoe.Layer animationForKey will not exist.
       var defaultAnimation = defaultAnimations[property];
       if (description && description instanceof ShoeValue) {
         animation = description.copy();
@@ -147,35 +147,35 @@ var Shoe = (function() {
       return animation;
     }
     
-    this.registerAnimatableProperty = function(name, defaultValue) {
+    receiver.registerAnimatableProperty = function(name, defaultValue) {
       registeredProperties.push(name);
       var defaultAnimation = defaultValue;
       if (isFunction(defaultValue)) defaultAnimation = new defaultValue();
-      var descriptor = Object.getOwnPropertyDescriptor(this, name);
+      var descriptor = Object.getOwnPropertyDescriptor(receiver, name);
       if (descriptor && descriptor.configurable === false) {
-        console.log("ShoeLayer:%s; registerAnimatableProperty:%s; already defined:%s;",this,name, JSON.stringify(descriptor),this);
+        console.log("ShoeLayer:%s; registerAnimatableProperty:%s; already defined:%s;",receiver,name, JSON.stringify(descriptor),receiver);
         return;
       }
       if (defaultAnimation) defaultAnimations[name] = defaultAnimation;
       else if (defaultAnimations[name]) delete defaultAnimations[name]; // property is still animatable
       
-      modelDict[name] = this[name];
-      Object.defineProperty(this, name, { // ACCESSORS
+      modelDict[name] = receiver[name];
+      Object.defineProperty(receiver, name, { // ACCESSORS
         get: function() {
-          if (this._isProxy) throw new Error("PresentationLayer getter should not be used for property:"+name+";");
+          if (receiver._isProxy) throw new Error("PresentationLayer getter should not be used for property:"+name+";");
           else return modelDict[name];
         },
         set: function(value) {
-          if (this._isProxy) throw new Error("PresentationLayer setter should not be used for property:"+name+";");
+          if (receiver._isProxy) throw new Error("PresentationLayer setter should not be used for property:"+name+";");
           else {
             var animation;
-            var transaction = this.context._currentTransaction();
+            var transaction = receiver.context._currentTransaction();
             if (!transaction.disableAnimation) {
-              animation = this.implicitAnimation(name,value);
+              animation = implicitAnimation(name,value);
               if (animation) {
                 if (animation.property === null || animation.property === undefined) animation.property = name;
                 if (animation.from === null || animation.from === undefined) {
-                  if (animation.absolute === true || animation.blend === "absolute") animation.from = this.presentation[name]; // use presentation layer
+                  if (animation.absolute === true || animation.blend === "absolute") animation.from = receiver.presentation[name]; // use presentation layer
                   else animation.from = modelDict[name];
                 }
                 if (animation.to === null || animation.to === undefined) animation.to = value;
@@ -183,8 +183,9 @@ var Shoe = (function() {
               }
             }
             modelDict[name] = value;
+            //if (true) { // this does not fix Safari flicker
             if (!animation) { // need to manually call render on property value change without animation. transactions.
-              var layer = this.presentation || this;
+              var layer = receiver.presentation || receiver;
               if (isFunction(layer.render)) layer.render();
             }
           }
@@ -192,29 +193,29 @@ var Shoe = (function() {
       });
     }
     
-    Object.defineProperty(this, "animations", {
+    Object.defineProperty(receiver, "animations", {
       get: function() {
         return allAnimations.map(function (animation) {
           return animation.copy(); // Lots of copying. Potential optimization
         });
       }
     });
-    Object.defineProperty(this, "animationKeys", {
+    Object.defineProperty(receiver, "animationKeys", {
       get: function() {
         return Object.keys(namedAnimations);
       }
     });
     
-    var modelLayer = this;
-    Object.defineProperty(this, "presentation", { // COMPOSITING. Rename "presentationLayer"? Have separate compositor object?
+    var modelLayer = receiver;
+    Object.defineProperty(receiver, "presentation", { // COMPOSITING. Rename "presentationLayer"? Have separate compositor object?
       get: function() { // need transactions and cache presentation layer
-        //if (this._isProxy) return modelLayer;
-        if (this._isProxy) return this; // need both presentationLayer and modelLayer getters
+        //if (receiver._isProxy) return modelLayer;
+        if (receiver._isProxy) return receiver; // need both presentationLayer and modelLayer getters
         
         var compositor = {};
         var finishedAnimations = [];
-        var proxy = Object.create(this);
-        proxy._isProxy = true; // do this differently. Maybe have presentationLayer and modelLayer accessors
+        var proxy = Object.create(receiver);
+        proxy._isProxy = receiver; // do this differently. Maybe have presentationLayer and modelLayer accessors
         
         if (shouldSortAnimations) {
           allAnimations.sort( function(a,b) {
@@ -229,7 +230,7 @@ var Shoe = (function() {
           shouldSortAnimations = false;
         }
         
-        var transaction = this.context._currentTransaction();
+        var transaction = receiver.context._currentTransaction();
         var now = transaction.time;
         
         allAnimations.forEach( function(animation) {
@@ -250,7 +251,7 @@ var Shoe = (function() {
         var compositorKeys = Object.keys(compositor);
         compositorKeys.forEach( function(property) {
           Object.defineProperty(proxy, property, {value:compositor[property]});
-        }.bind(this));
+        }.bind(receiver));
         
         registeredProperties.forEach( function(property) {
           if (compositorKeys.indexOf(property) === -1) {
@@ -259,7 +260,7 @@ var Shoe = (function() {
             if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") value = defaultAnimation.zero();
             Object.defineProperty(proxy, property, {value:value});
           }
-        }.bind(this));
+        }.bind(receiver));
 
         finishedAnimations.forEach( function(animation) {
           if (isFunction(animation.onend)) animation.onend();
@@ -269,56 +270,62 @@ var Shoe = (function() {
       }
     });
     
-    this.needsDisplay = function() {
+    receiver.needsDisplay = function() {
       // NOT IMPLEMENTED, obviously
       // This should be used instead of directly calling render
     }
     
-    this.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
+    receiver.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
       //if (name === null || name === undefined) name = "" + animation.property + animationCount++; // need to implement auto increment key
-      var context = this.context || this;
-      if (!allAnimations.length) context.registerTarget(this);
+      var context = receiver.context || receiver;
+      if (!allAnimations.length) context.registerTarget(receiver);
       var copy = animation.copy();
       copy.number = animationNumber++;
       allAnimations.push(copy);
       if (name !== null && name !== undefined) {
         var previous = namedAnimations[name];
-        if (previous) this._removeAnimationInstance(previous); // after pushing to allAnimations, so context doesn't stop ticking
+        if (previous) receiver._removeAnimationInstance(previous); // after pushing to allAnimations, so context doesn't stop ticking
         namedAnimations[name] = copy;
       }
       shouldSortAnimations = true;
-      copy.runAnimation(this, name);
+      copy.runAnimation(receiver, name);
     }
-    this.addAnimationNamed = this.addAnimation;
+    receiver.addAnimationNamed = receiver.addAnimation;
     
-    this._removeAnimationInstance = function(animation) {
+    receiver._removeAnimationInstance = function(animation) {
       var index = allAnimations.indexOf(animation);
       if (index > -1) {
         allAnimations.splice(index,1);
         shouldSortAnimations = true;
       }
-      var context = this.context || this;
-      if (!allAnimations.length) context.deregisterTarget(this);
+      var context = receiver.context || receiver;
+      if (!allAnimations.length) context.deregisterTarget(receiver);
     }
-    this.removeAnimation = function(name) {
+    receiver.removeAnimation = function(name) {
       var animation = namedAnimations[name];
-      this._removeAnimationInstance(animation);
+      receiver._removeAnimationInstance(animation);
       delete namedAnimations[name];
     }
-    this.removeAnimationNamed = this.removeAnimation;
+    receiver.removeAnimationNamed = receiver.removeAnimation;
     
-    this.removeAllAnimations = function() {
+    receiver.removeAllAnimations = function() {
       allAnimations = [];
       namedAnimations = {};
     }
     
-    this.animationNamed = function(name) {
+    receiver.animationNamed = function(name) {
       var animation = namedAnimations[name];
       if (animation) return animation.copy();
       return null;
     }
     
-    this.context = shoeContext; // awkward
+    receiver.context = shoeContext; // awkward
+  }
+  
+  
+  
+  function ShoeLayer() { // Meant to be subclassed to provide implicit animation and clear distinction between model/presentation values
+    Layerize(this);
   }
   ShoeLayer.prototype = {};
   ShoeLayer.prototype.constructor = ShoeLayer;
@@ -519,13 +526,14 @@ var Shoe = (function() {
   
   
   return {
-    Layer : ShoeLayer,
-    NumberType : ShoeNumber,
-    ScaleType : ShoeScale,
-    ValueType : ShoeValue,
-    ArrayType : ShoeArray,
-    beginTransaction: shoeContext.beginTransaction.bind(shoeContext),
-    commitTransaction: shoeContext.commitTransaction.bind(shoeContext),
-    disableAnimation: shoeContext.disableAnimation.bind(shoeContext)
+    Layer: ShoeLayer, // The basic layer class, meant to be subclassed
+    ValueType: ShoeValue, // Abstract animation base class
+    NumberType: ShoeNumber, // For animating numbers
+    ScaleType: ShoeScale, // For animating transform scale
+    ArrayType: ShoeArray, // For animating arrays of other value types
+    beginTransaction: shoeContext.beginTransaction.bind(shoeContext), // UNFINSHED
+    commitTransaction: shoeContext.commitTransaction.bind(shoeContext), // UNFINSHED
+    disableAnimation: shoeContext.disableAnimation.bind(shoeContext), // UNFINSHED
+    layerize: Layerize // UNFINSHED. To mixin layer functionality in objects that are not ShoeLayer subclasses.
   }
 })();
