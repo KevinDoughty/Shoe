@@ -147,48 +147,53 @@ var Shoe = (function() {
       return animation;
     }
     
-    receiver.registerAnimatableProperty = function(name, defaultValue) {
-      registeredProperties.push(name);
+    receiver.valueForKey = function(property) {
+      return modelDict[property];
+    };
+    
+    receiver.setValueForKey = function(value,property) {
+      var animation;
+      var transaction = receiver.context._currentTransaction();
+      if (!transaction.disableAnimation) {
+        animation = implicitAnimation(property,value);
+        if (animation) {
+          if (animation.property === null || animation.property === undefined) animation.property = property;
+          if (animation.from === null || animation.from === undefined) {
+            if (animation.absolute === true || animation.blend === "absolute") animation.from = receiver.presentation[property]; // use presentation layer
+            else animation.from = modelDict[property];
+          }
+          if (animation.to === null || animation.to === undefined) animation.to = value;
+          this.addAnimation(animation); // this will copy a second time. 
+        }
+      }
+      modelDict[property] = value;
+      //if (true) { // this does not fix Safari flicker
+      if (!animation) { // need to manually call render on property value change without animation. transactions.
+        var layer = receiver.presentation || receiver;
+        if (isFunction(layer.render)) layer.render();
+      }
+    };
+    
+    receiver.registerAnimatableProperty = function(property, defaultValue) {
+      registeredProperties.push(property);
       var defaultAnimation = defaultValue;
       if (isFunction(defaultValue)) defaultAnimation = new defaultValue();
-      var descriptor = Object.getOwnPropertyDescriptor(receiver, name);
+      var descriptor = Object.getOwnPropertyDescriptor(receiver, property);
       if (descriptor && descriptor.configurable === false) {
-        console.log("ShoeLayer:%s; registerAnimatableProperty:%s; already defined:%s;",receiver,name, JSON.stringify(descriptor),receiver);
+        console.log("ShoeLayer:%s; registerAnimatableProperty:%s; already defined:%s;",receiver,property, JSON.stringify(descriptor),receiver);
         return;
       }
-      if (defaultAnimation) defaultAnimations[name] = defaultAnimation;
-      else if (defaultAnimations[name]) delete defaultAnimations[name]; // property is still animatable
-      
-      modelDict[name] = receiver[name];
-      Object.defineProperty(receiver, name, { // ACCESSORS
+      if (defaultAnimation) defaultAnimations[property] = defaultAnimation;
+      else if (defaultAnimations[property]) delete defaultAnimations[property]; // property is still animatable
+      modelDict[property] = receiver[property];
+      Object.defineProperty(receiver, property, { // ACCESSORS
         get: function() {
-          if (receiver._isProxy) throw new Error("PresentationLayer getter should not be used for property:"+name+";");
-          else return modelDict[name];
+          if (receiver._isProxy) throw new Error("PresentationLayer getter should not be used for property:"+property+";");
+          else return receiver.valueForKey(property);
         },
         set: function(value) {
-          if (receiver._isProxy) throw new Error("PresentationLayer setter should not be used for property:"+name+";");
-          else {
-            var animation;
-            var transaction = receiver.context._currentTransaction();
-            if (!transaction.disableAnimation) {
-              animation = implicitAnimation(name,value);
-              if (animation) {
-                if (animation.property === null || animation.property === undefined) animation.property = name;
-                if (animation.from === null || animation.from === undefined) {
-                  if (animation.absolute === true || animation.blend === "absolute") animation.from = receiver.presentation[name]; // use presentation layer
-                  else animation.from = modelDict[name];
-                }
-                if (animation.to === null || animation.to === undefined) animation.to = value;
-                this.addAnimation(animation); // this will copy a second time. 
-              }
-            }
-            modelDict[name] = value;
-            //if (true) { // this does not fix Safari flicker
-            if (!animation) { // need to manually call render on property value change without animation. transactions.
-              var layer = receiver.presentation || receiver;
-              if (isFunction(layer.render)) layer.render();
-            }
-          }
+          if (receiver._isProxy) throw new Error("PresentationLayer setter should not be used for property:"+property+";");
+          else receiver.setValueForKey(value,property);
         }
       });
     }
