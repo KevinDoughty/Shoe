@@ -373,6 +373,7 @@ var Shoe = (function() {
     this.index = 0; // float. Custom compositing order. Defaults to 0.
     this.delay; // NOT IMPLEMENTED
     this.blend = "relative"; // also "absolute" or "zero"
+    this.sort;
     this.finished = false;
     this.startTime; // float
     if (settings) Object.keys(settings).forEach( function(key) {
@@ -533,12 +534,53 @@ var Shoe = (function() {
   
   
   
+  function ShoeSet(settings) {
+    ShoeValue.call(this,settings);
+  }
+  ShoeSet.prototype = Object.create(ShoeValue.prototype);
+  ShoeSet.prototype.constructor = ShoeSet;
+  ShoeSet.prototype.zero = function() {
+    return [];
+  };
+  ShoeSet.prototype.add = function(a,b) {
+    if (!Array.isArray(a) && !Array.isArray(b)) return [];
+    if (!Array.isArray(a)) return b;
+    if (!Array.isArray(b)) return a;
+    var array = a.slice(0);
+    var i = b.length;
+    while (i--) {
+      if (a.indexOf(b[i]) < 0) array.push(b[i]);
+    }
+    if (this.sort === true) array.sort(); //Array.sort default is by unicode codepoint
+    if (this.sort && isFunction(this.sort)) array.sort(this.sort); // consider sorting during subtract
+    return array;
+  };
+  ShoeSet.prototype.subtract = function(a,b) { // remove b from a
+    if (!Array.isArray(a) && !Array.isArray(b)) return [];
+    if (!Array.isArray(a)) return b;
+    if (!Array.isArray(b)) return a;
+    var array = a.slice(0);
+    var i = b.length;
+    while (i--) {
+      var loc = array.indexOf(b[i]);
+      if (loc > -1) array.splice(loc,1);
+    }
+    return array;
+  };
+  ShoeSet.prototype.interpolate = function(a,b,progress) {
+    if (progress === 1) return b;
+    return a;
+  };
+  
+  
+  
   return {
     Layer: ShoeLayer, // The basic layer class, meant to be subclassed
     ValueType: ShoeValue, // Abstract animation base class
     NumberType: ShoeNumber, // For animating numbers
     ScaleType: ShoeScale, // For animating transform scale
     ArrayType: ShoeArray, // For animating arrays of other value types
+    SetType: ShoeSet, // Discrete object changes
     beginTransaction: shoeContext.beginTransaction.bind(shoeContext), // UNFINSHED
     commitTransaction: shoeContext.commitTransaction.bind(shoeContext), // UNFINSHED
     disableAnimation: shoeContext.disableAnimation.bind(shoeContext), // UNFINSHED
