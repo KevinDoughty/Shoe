@@ -229,7 +229,7 @@ var Shoe = (function() {
             if (B === null || B === undefined) B = 0;
             var result = A - B;
             if (!result) result = a.startTime - b.startTime;
-            if (!result) result = a.number - b.number; // animation number is probably not necessary. Unsure about sort behavior.
+            if (!result) result = a.number - b.number; // animation number is needed because sort is not guaranteed to be stable
             return result;
           });
           shouldSortAnimations = false;
@@ -352,13 +352,16 @@ var Shoe = (function() {
   
   
   function ShoeValue(settings) { // The base animation class
+    if (this instanceof ShoeValue === false) {
+      throw new Error("ShoeValue is a constructor, not a function. Do not call it directly.");
+    }
     if (this.constructor === ShoeValue) {
       throw new Error("Shoe.ValueType is an abstract base class.");
     }
     this.settings = settings;
     this.property; // string, property name
-    this.from; // type specific. Subclasses must implement zero, invert, add, and interpolate
-    this.to; // type specific. Subclasses must implement zero, invert, add, and interpolate
+    this.from; // type specific. Subclasses must implement zero, add, subtract and interpolate. invert is no longer used
+    this.to; // type specific. Subclasses must implement zero, add, subtract and interpolate. invert is no longer used
     this.completion; // NOT FINISHED. callback function, fires regardless of fillMode. Should rename. Should also implement didStart, maybe didTick, etc.
     this.duration; // float. Need to validate/ensure float >= 0. Defaults to 0.
     this.easing; // NOT FINISHED. currently callback function only, need cubic bezier and presets. Defaults to linear
@@ -411,8 +414,8 @@ var Shoe = (function() {
       if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
-      if (this.absolute !== true && this.blend !== "absolute") this.delta = this.add(this.from,this.invert(this.to));
-      this.onend = function() { // should swap the naming
+      if (this.absolute !== true && this.blend !== "absolute") this.delta = this.subtract(this.from,this.to);
+      this.onend = function() { // COMPLETION. Should swap the naming. Private should be completion, public should be onend or onEnd
         if (!this.fillMode || this.fillMode === "none") {
           if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
           else layer._removeAnimationInstance(this);
@@ -438,11 +441,11 @@ var Shoe = (function() {
     zero: function() {
       throw new Error("Shoe.ValueType subclasses must implement function: zero()");
     },
-    invert: function() {
-      throw new Error("Shoe.ValueType subclasses must implement function: invert(a)");
-    },
     add: function() {
       throw new Error("Shoe.ValueType subclasses must implement function: add(a,b)");
+    },
+    subtract: function() {
+      throw new Error("Shoe.ValueType subclasses must implement function: subtract(a,b) in the form subtract b from a");
     },
     interpolate: function() {
       throw new Error("Shoe.ValueType subclasses must implement function: interpolate(a,b,progress)");
@@ -459,11 +462,11 @@ var Shoe = (function() {
   ShoeNumber.prototype.zero = function() {
     return 0;
   };
-  ShoeNumber.prototype.invert = function(a) {
-    return -a;
-  };
   ShoeNumber.prototype.add = function(a,b) {
     return a + b;
+  };
+  ShoeNumber.prototype.subtract = function(a,b) { // subtract b from a
+    return a - b;
   };
   ShoeNumber.prototype.interpolate = function(a,b,progress) {
     return a + (b-a) * progress;
@@ -479,12 +482,12 @@ var Shoe = (function() {
   ShoeScale.prototype.zero = function() {
     return 1;
   };
-  ShoeScale.prototype.invert = function(a) {
-    if (a === 0) return 0;
-    return 1/a;
-  };
   ShoeScale.prototype.add = function(a,b) {
     return a * b;
+  };
+  ShoeScale.prototype.subtract = function(a,b) { // subtract b from a
+    if (b === 0) return 0;
+    return a/b;
   };
   ShoeScale.prototype.interpolate = function(a,b,progress) {
     return a + (b-a) * progress;
@@ -513,10 +516,10 @@ var Shoe = (function() {
     }
     return array;
   };
-  ShoeArray.prototype.invert = function(a) {
+  ShoeArray.prototype.subtract = function(a,b) { // subtract b from a
     var array = [];
     for (var i = 0; i < this.length; i++) {
-      array.push(this.type.invert(a[i]));
+      array.push(this.type.subtract(a[i],b[i]));
     }
     return array;
   };
