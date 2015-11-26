@@ -101,6 +101,7 @@ var Shoe = (function() {
         if (transaction.automaticallyCommit) this.commitTransaction();
       }
       this.targets.forEach( function(target) {
+        if (!target.animations.length) this.deregisterTarget(target); // Deregister here to ensure one more tick after last animation has been removed
         var render = target.render;
         if (isFunction(render)) {
           var layer = target.presentation || target;
@@ -167,7 +168,6 @@ var Shoe = (function() {
         }
       }
       modelDict[property] = value;
-      //if (true) { // this does not fix Safari flicker
       if (!animation) { // need to manually call render on property value change without animation. transactions.
         var layer = receiver.presentation || receiver;
         if (isFunction(layer.render)) layer.render();
@@ -299,12 +299,7 @@ var Shoe = (function() {
     
     receiver._removeAnimationInstance = function(animation) {
       var index = allAnimations.indexOf(animation);
-      if (index > -1) {
-        allAnimations.splice(index,1);
-        shouldSortAnimations = true;
-      }
-      var context = receiver.context || receiver;
-      if (!allAnimations.length) context.deregisterTarget(receiver);
+      if (index > -1) allAnimations.splice(index,1); // do not deregister yet, must ensure one more tick
     }
     receiver.removeAnimation = function(name) {
       var animation = namedAnimations[name];
