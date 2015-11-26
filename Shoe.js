@@ -159,7 +159,7 @@ var Shoe = (function() {
         if (animation) {
           if (animation.property === null || animation.property === undefined) animation.property = property;
           if (animation.from === null || animation.from === undefined) {
-            if (animation.absolute === true || animation.blend === "absolute") animation.from = receiver.presentation[property]; // use presentation layer
+            if (animation.blend === "absolute") animation.from = receiver.presentation[property]; // use presentation layer
             else animation.from = modelDict[property];
           }
           if (animation.to === null || animation.to === undefined) animation.to = value;
@@ -247,7 +247,7 @@ var Shoe = (function() {
           
           if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model;
           
-          if (animation.absolute === true) compositor[property] = value;
+          if (animation.blend === "absolute") compositor[property] = value;
           else compositor[property] = animation.add(compositor[property],value);
           
           if (animation.finished === true) finishedAnimations.push(animation);
@@ -369,7 +369,6 @@ var Shoe = (function() {
     this.iterations = 1; // float >= 0. Defaults to 1.
     this.autoreverse; // boolean. When iterations > 1. Easing also reversed. Maybe should be named "autoreverses", maybe should be camelCased
     this.fillMode; // string. Defaults to "none". NOT FINISHED. "forwards" and "backwards" are "both". maybe should be named "fill". maybe should just be a boolean
-    this.absolute; // boolean. Defaults to false. DEPRECATED. Use blend instead
     this.index = 0; // float. Custom compositing order. Defaults to 0.
     this.delay; // NOT IMPLEMENTED
     this.blend = "relative"; // also "absolute" or "zero"
@@ -405,7 +404,7 @@ var Shoe = (function() {
       if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
       else if (this.easing !== "linear") iterationProgress = 0.5-(Math.cos(iterationProgress * Math.PI) / 2);
       
-      if (this.absolute === true) return this.interpolate(this.from,this.to,iterationProgress);
+      if (this.blend === "absolute") return this.interpolate(this.from,this.to,iterationProgress);
       return this.interpolate(this.delta,this.zero(),iterationProgress);
     }
     
@@ -415,7 +414,7 @@ var Shoe = (function() {
       if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
-      if (this.absolute !== true && this.blend !== "absolute") this.delta = this.subtract(this.from,this.to);
+      if (this.blend !== "absolute") this.delta = this.subtract(this.from,this.to);
       this.onend = function() { // COMPLETION. Should swap the naming. Private should be completion, public should be onend or onEnd
         if (!this.fillMode || this.fillMode === "none") {
           if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
