@@ -22,11 +22,18 @@ THE SOFTWARE.
 
 var Shoe = (function() {
   
-  var raf = window.requestAnimationFrame ||
+  var rAF = window.requestAnimationFrame ||
     window.webkitRequestAnimationFrame ||
     window.mozRequestAnimationFrame ||
     window.msRequestAnimationFrame ||
     window.oRequestAnimationFrame;
+    
+  var cAF = window.cancelAnimationFrame ||
+    window.webkitCancelRequestAnimationFrame ||
+    window.webkitCancelAnimationFrame ||
+    window.mozCancelAnimationFrame ||
+    window.msCancelAnimationFrame ||
+    window.oCancelAnimationFrame;
   
   function isFunction(w) {
     return w && {}.toString.call(w) === "[object Function]";
@@ -52,11 +59,16 @@ var Shoe = (function() {
     this.targets = [];
     this.transactions = [];
     this.ticking = false;
+    this.frame;
   }
   
   ShoeContext.prototype = {
     _createTransaction: function(automaticallyCommit) {
       var transaction = new ShoeTransaction(automaticallyCommit);
+      var length = this.transactions.length;
+      if (length) { // Time freezes in transactions. A time getter should return transaction time if within one.
+        transaction.time = this.transactions[length-1].time;
+      }
       this.transactions.push(transaction);
       return transaction;
     },
@@ -71,6 +83,10 @@ var Shoe = (function() {
     commitTransaction: function() {
       var transaction = this.transactions.pop();
     },
+    flushTransaction: function() {
+      if (this.frame) cAF(this.frame); // Unsure if cancelling animation frame is needed.
+      this.ticker();
+    },
     disableAnimation: function(disable) {
       var transaction = this._currentTransaction();
       transaction.disableAnimation = disable;
@@ -78,7 +94,7 @@ var Shoe = (function() {
     },
     
     registerTarget: function(target) {
-      if (!this.ticking) this._startTicking();
+      this._startTicking();
       var index = this.targets.indexOf(target);
       if (index < 0) this.targets.push(target);
     },
@@ -88,18 +104,10 @@ var Shoe = (function() {
       if (index > -1) this.targets.splice(index, 1);
     },
     _startTicking: function() {
-      if (!this.ticking) {
-        this.ticking = true;
-        raf(this.ticker.bind(this));
-      }
+      if (!this.frame) this.frame = rAF(this.ticker.bind(this));
     },
-    ticker: function() {
-      this.ticking = false;
-      var length = this.transactions.length;
-      if (length) {
-        var transaction = this.transactions[length-1];
-        if (transaction.automaticallyCommit) this.commitTransaction();
-      }
+    ticker: function() { // Need to manually cancel animation frame if calling directly.
+      this.frame = undefined;
       var targets = this.targets.slice(0);
       targets.forEach( function(target) {
         if (!target.animations.length) this.deregisterTarget(target); // Deregister here to ensure one more tick after last animation has been removed
@@ -110,6 +118,11 @@ var Shoe = (function() {
           boundRender();
         }
       }.bind(this));
+      var length = this.transactions.length;
+      if (length) {
+        var transaction = this.transactions[length-1];
+        if (transaction.automaticallyCommit) this.commitTransaction();
+      }
       if (this.targets.length) this._startTicking();
     }
   }
@@ -244,14 +257,16 @@ var Shoe = (function() {
           var value = animation.getAnimatedValue(now);
           var model = modelDict[property];
           var defaultAnimation = defaultAnimations[property];
-          if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") model = defaultAnimation.zero();
+          if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") model = defaultAnimation.zero(); // blend mode zero has conceptual difficulties. Animations affect layers in ways beyond what an animation should. zero presentation is more of a layer property, not animation. Default animation is the only thing that can be used. Can't do this from animationForKey
           
           if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model;
           
           if (animation.blend === "absolute") compositor[property] = value;
           else compositor[property] = animation.add(compositor[property],value);
           
-          if (animation.finished === true) finishedAnimations.push(animation);
+          //if (animation.finished === true) finishedAnimations.push(animation);
+          if (animation.finished > 1) throw new Error("Animation finishing twice is not possible");
+          if (animation.finished > 0) finishedAnimations.push(animation);
         }.bind(this));
         
         var compositorKeys = Object.keys(compositor);
@@ -262,12 +277,12 @@ var Shoe = (function() {
         registeredProperties.forEach( function(property) {
           if (compositorKeys.indexOf(property) === -1) {
             var value = modelDict[property];
-            var defaultAnimation = defaultAnimations[property];
+            var defaultAnimation = defaultAnimations[property]; // Blend mode zero suffers from conceptual difficulties. don't want to ask for animationForKey again. need to determine presentation value
             if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") value = defaultAnimation.zero();
             Object.defineProperty(proxy, property, {value:value});
           }
         }.bind(receiver));
-
+        
         finishedAnimations.forEach( function(animation) {
           if (isFunction(animation.onend)) animation.onend();
         });
@@ -369,7 +384,7 @@ var Shoe = (function() {
     this.delay; // NOT IMPLEMENTED
     this.blend = "relative"; // also "absolute" or "zero"
     this.sort;
-    this.finished = false;
+    this.finished = 0;//false;
     this.startTime; // float
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
@@ -389,7 +404,7 @@ var Shoe = (function() {
       }
       if (combinedProgress >= 1) {
         iterationProgress = 1;
-        this.finished = true;
+        this.finished++;// = true;
       }
       var inReverse = 0; // falsy
       if (!this.finished) {
@@ -419,7 +434,7 @@ var Shoe = (function() {
         if (isFunction(this.completion)) this.completion();
         this.onend = null; // lazy way to keep compositor from calling this twice, during fill phase
       }.bind(this);
-      if (this.startTime === null || this.startTime === undefined) this.startTime = performance.now() / 1000;
+      if (this.startTime === null || this.startTime === undefined) this.startTime = shoeContext._currentTransaction().time;
     }
   }
   ShoeValue.prototype = {
@@ -578,6 +593,7 @@ var Shoe = (function() {
     SetType: ShoeSet, // Discrete object changes
     beginTransaction: shoeContext.beginTransaction.bind(shoeContext), // UNFINSHED
     commitTransaction: shoeContext.commitTransaction.bind(shoeContext), // UNFINSHED
+    flushTransaction: shoeContext.flushTransaction.bind(shoeContext),
     disableAnimation: shoeContext.disableAnimation.bind(shoeContext), // UNFINSHED
     layerize: Layerize // UNFINSHED. To mixin layer functionality in objects that are not ShoeLayer subclasses.
   }
