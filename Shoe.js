@@ -261,8 +261,8 @@ var Shoe = (function() {
           
           if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model;
           
-          if (animation.blend === "absolute") compositor[property] = value;
-          else compositor[property] = animation.add(compositor[property],value);
+          if (animation.additive) compositor[property] = animation.add(compositor[property],value);
+          else compositor[property] = value;
           
           //if (animation.finished === true) finishedAnimations.push(animation);
           if (animation.finished > 1) throw new Error("Animation finishing twice is not possible");
@@ -383,6 +383,7 @@ var Shoe = (function() {
     this.index = 0; // float. Custom compositing order. Defaults to 0.
     this.delay; // NOT IMPLEMENTED
     this.blend = "relative"; // also "absolute" or "zero"
+    this.additive = true;
     this.sort;
     this.finished = 0;//false;
     this.startTime; // float
