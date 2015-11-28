@@ -100,7 +100,8 @@ var Shoe = (function() {
         var transaction = this.transactions[length-1];
         if (transaction.automaticallyCommit) this.commitTransaction();
       }
-      this.targets.forEach( function(target) {
+      var targets = this.targets.slice(0);
+      targets.forEach( function(target) {
         if (!target.animations.length) this.deregisterTarget(target); // Deregister here to ensure one more tick after last animation has been removed
         var render = target.render;
         if (isFunction(render)) {
