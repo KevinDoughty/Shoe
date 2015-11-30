@@ -85,7 +85,7 @@ var Shoe = (function() {
     },
     flushTransaction: function() {
       if (this.frame) cAF(this.frame); // Unsure if cancelling animation frame is needed.
-      this.ticker();
+      this.ticker(); // Probably should not commit existing transaction
     },
     disableAnimation: function(disable) {
       var transaction = this._currentTransaction();
@@ -298,6 +298,7 @@ var Shoe = (function() {
     
     receiver.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
       //if (name === null || name === undefined) name = "" + animation.property + animationCount++; // need to implement auto increment key
+      if (!animation instanceof ShoeValue) throw new Error("Animations must be a subclass of Shoe.ValueType.");
       var context = receiver.context || receiver;
       if (!allAnimations.length) context.registerTarget(receiver);
       var copy = animation.copy();
@@ -579,7 +580,7 @@ var Shoe = (function() {
     return array;
   };
   ShoeSet.prototype.interpolate = function(a,b,progress) {
-    if (progress === 1) return b;
+    if (progress >= 1) return b;
     return a;
   };
   
@@ -592,10 +593,10 @@ var Shoe = (function() {
     ScaleType: ShoeScale, // For animating transform scale
     ArrayType: ShoeArray, // For animating arrays of other value types
     SetType: ShoeSet, // Discrete object changes
-    beginTransaction: shoeContext.beginTransaction.bind(shoeContext), // UNFINSHED
-    commitTransaction: shoeContext.commitTransaction.bind(shoeContext), // UNFINSHED
+    beginTransaction: shoeContext.beginTransaction.bind(shoeContext),
+    commitTransaction: shoeContext.commitTransaction.bind(shoeContext),
     flushTransaction: shoeContext.flushTransaction.bind(shoeContext),
-    disableAnimation: shoeContext.disableAnimation.bind(shoeContext), // UNFINSHED
-    layerize: Layerize // UNFINSHED. To mixin layer functionality in objects that are not ShoeLayer subclasses.
+    disableAnimation: shoeContext.disableAnimation.bind(shoeContext),
+    layerize: Layerize // To mixin layer functionality in objects that are not ShoeLayer subclasses.
   }
 })();
