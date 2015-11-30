@@ -168,7 +168,7 @@ var Shoe = (function() {
     
     receiver.setValueForKey = function(value,property) {
       var animation;
-      var transaction = receiver.context._currentTransaction();
+      var transaction = shoeContext._currentTransaction();
       if (!transaction.disableAnimation) {
         animation = implicitAnimation(property,value);
         if (animation) {
@@ -249,7 +249,7 @@ var Shoe = (function() {
           shouldSortAnimations = false;
         }
         
-        var transaction = receiver.context._currentTransaction();
+        var transaction = shoeContext._currentTransaction();
         var now = transaction.time;
         
         allAnimations.forEach( function(animation) {
@@ -299,8 +299,7 @@ var Shoe = (function() {
     receiver.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
       //if (name === null || name === undefined) name = "" + animation.property + animationCount++; // need to implement auto increment key
       if (!animation instanceof ShoeValue) throw new Error("Animations must be a subclass of Shoe.ValueType.");
-      var context = receiver.context || receiver;
-      if (!allAnimations.length) context.registerTarget(receiver);
+      if (!allAnimations.length) shoeContext.registerTarget(receiver);
       var copy = animation.copy();
       copy.number = animationNumber++;
       allAnimations.push(copy);
@@ -335,8 +334,6 @@ var Shoe = (function() {
       if (animation) return animation.copy();
       return null;
     }
-    
-    receiver.context = shoeContext; // awkward
   }
   
   
