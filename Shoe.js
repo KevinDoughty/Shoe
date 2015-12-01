@@ -162,11 +162,11 @@ var Shoe = (function() {
       return animation;
     }
     
-    receiver.valueForKey = function(property) {
+    var valueForKey = function(property) {
       return modelDict[property];
     };
     
-    receiver.setValueForKey = function(value,property) {
+    var setValueForKey = function(value,property) {
       var animation;
       var transaction = shoeContext._currentTransaction();
       if (!transaction.disableAnimation) {
@@ -178,7 +178,7 @@ var Shoe = (function() {
             else animation.from = modelDict[property];
           }
           if (animation.to === null || animation.to === undefined) animation.to = value;
-          this.addAnimation(animation); // this will copy a second time. 
+          receiver.addAnimation(animation); // this will copy a second time. 
         }
       }
       modelDict[property] = value;
@@ -203,12 +203,14 @@ var Shoe = (function() {
       Object.defineProperty(receiver, property, { // ACCESSORS
         get: function() {
           if (receiver._isProxy) throw new Error("PresentationLayer getter should not be used for property:"+property+";");
-          else return receiver.valueForKey(property);
+          else return valueForKey(property);
         },
         set: function(value) {
           if (receiver._isProxy) throw new Error("PresentationLayer setter should not be used for property:"+property+";");
-          else receiver.setValueForKey(value,property);
-        }
+          else setValueForKey(value,property);
+        },
+        enumerable: true,
+        configurable: false
       });
     }
     
@@ -217,12 +219,15 @@ var Shoe = (function() {
         return allAnimations.map(function (animation) {
           return animation.copy(); // Lots of copying. Potential optimization
         });
-      }
+      },
+      enumerable: false,
+      configurable: false
     });
     Object.defineProperty(receiver, "animationKeys", {
       get: function() {
         return Object.keys(namedAnimations);
-      }
+      },
+      enumerable: false
     });
     
     var modelLayer = receiver;
@@ -288,12 +293,25 @@ var Shoe = (function() {
         });
         
         return proxy;
-      }
+      },
+      enumerable: false,
+      configurable: false
     });
     
+    /*
     receiver.needsDisplay = function() {
       // NOT IMPLEMENTED, obviously
       // This should be used instead of directly calling render
+    }
+    */
+    var removeAnimationInstance = function(animation) {
+      var index = allAnimations.indexOf(animation);
+      if (index > -1) allAnimations.splice(index,1); // do not deregister yet, must ensure one more tick
+    }
+    
+    var removalCallback = function(animation,key) {
+      if (key !== null && key !== undefined) receiver.removeAnimation(key);
+      else removeAnimationInstance(animation);
     }
     
     receiver.addAnimation = function(animation,name) { // should be able to pass a description if type is registered
@@ -305,24 +323,20 @@ var Shoe = (function() {
       allAnimations.push(copy);
       if (name !== null && name !== undefined) {
         var previous = namedAnimations[name];
-        if (previous) receiver._removeAnimationInstance(previous); // after pushing to allAnimations, so context doesn't stop ticking
+        if (previous) removeAnimationInstance(previous); // after pushing to allAnimations, so context doesn't stop ticking
         namedAnimations[name] = copy;
       }
       shouldSortAnimations = true;
-      copy.runAnimation(receiver, name);
+      copy.runAnimation(receiver, name, removalCallback);
     }
-    receiver.addAnimationNamed = receiver.addAnimation;
+    //receiver.addAnimationNamed = receiver.addAnimation;
     
-    receiver._removeAnimationInstance = function(animation) {
-      var index = allAnimations.indexOf(animation);
-      if (index > -1) allAnimations.splice(index,1); // do not deregister yet, must ensure one more tick
-    }
     receiver.removeAnimation = function(name) {
       var animation = namedAnimations[name];
-      receiver._removeAnimationInstance(animation);
+      removeAnimationInstance(animation);
       delete namedAnimations[name];
     }
-    receiver.removeAnimationNamed = receiver.removeAnimation;
+    //receiver.removeAnimationNamed = receiver.removeAnimation;
     
     receiver.removeAllAnimations = function() {
       allAnimations = [];
@@ -420,15 +434,14 @@ var Shoe = (function() {
     
     this.delta;
     this.onend;
-    this.runAnimation = function(layer,key) {
+    this.runAnimation = function(layer,key,removalCallback) {
       if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
       if (this.blend !== "absolute") this.delta = this.subtract(this.from,this.to);
       this.onend = function() { // COMPLETION. Should swap the naming. Private should be completion, public should be onend or onEnd
         if (!this.fillMode || this.fillMode === "none") {
-          if (key !== null && key !== undefined) layer.removeAnimationNamed(key);
-          else layer._removeAnimationInstance(this);
+          removalCallback(this,key);
         }
         if (isFunction(this.completion)) this.completion();
         this.onend = null; // lazy way to keep compositor from calling this twice, during fill phase
