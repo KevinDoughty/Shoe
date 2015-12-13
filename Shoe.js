@@ -397,7 +397,6 @@ var Shoe = (function() {
       this[key] = settings[key];
     }.bind(this));
     
-    //this.getAnimatedValue = function(now) {
     this.composite = function(onto,now) {
       if (this.startTime === null || this.startTime === undefined) return this.zero();
       var elapsed = Math.max(0, now - (this.startTime + this.delay));
@@ -423,12 +422,9 @@ var Shoe = (function() {
       if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
       else if (this.easing !== "linear") iterationProgress = 0.5-(Math.cos(iterationProgress * Math.PI) / 2);
       
-      var value;
-      if (this.blend === "absolute") value = this.interpolate(this.from,this.to,iterationProgress);
-      //return this.interpolate(this.delta,this.zero(),iterationProgress);
-      else value = this.interpolate(this.delta,this.zero(),iterationProgress);
+      var value = (this.blend === "absolute") ? this.interpolate(this.from,this.to,iterationProgress) : this.interpolate(this.delta,this.zero(),iterationProgress);
       var property = this.property;
-      //var value = animation.getAnimatedValue(now); // group animation ? active animation
+      
       if (this.additive) onto[property] = this.add(onto[property],value);
       else onto[property] = value;
     }
