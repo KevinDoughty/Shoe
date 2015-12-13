@@ -266,7 +266,7 @@ var Shoe = (function() {
           //if (animation.finished === true) finishedAnimations.push(animation);
           if (animation.finished > 1) throw new Error("Animation finishing twice is not possible");
           if (animation.finished > 0) finishedAnimations.push(animation);
-        }.bind(this));
+        });
         
         var compositorKeys = Object.keys(compositor);
         compositorKeys.forEach( function(property) {
