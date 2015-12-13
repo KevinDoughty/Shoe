@@ -236,7 +236,11 @@ var Shoe = (function() {
         //if (receiver._isProxy) return modelLayer;
         if (receiver._isProxy) return receiver; // need both presentationLayer and modelLayer getters
         
-        var compositor = {};
+        var compositor = Object.keys(modelDict).reduce(function(n, k){ n[k] = modelDict[k]; return n;}, {});
+        Object.keys(compositor).forEach( function(property) {
+          var defaultAnimation = defaultAnimations[property];
+          if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") compositor[property] = defaultAnimation.zero(); // blend mode zero has conceptual difficulties. Animations affect layers in ways beyond what an animation should. zero presentation is more of a layer property, not animation. Default animation is the only thing that can be used. Can't do this from animationForKey
+        });
         var finishedAnimations = [];
         var proxy = Object.create(receiver);
         proxy._isProxy = receiver; // do this differently. Maybe have presentationLayer and modelLayer accessors
@@ -259,12 +263,7 @@ var Shoe = (function() {
         
         allAnimations.forEach( function(animation) {
           var property = animation.property;
-          var value = animation.getAnimatedValue(now);
-          var model = modelDict[property];
-          var defaultAnimation = defaultAnimations[property];
-          if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") model = defaultAnimation.zero(); // blend mode zero has conceptual difficulties. Animations affect layers in ways beyond what an animation should. zero presentation is more of a layer property, not animation. Default animation is the only thing that can be used. Can't do this from animationForKey
-          
-          if (compositor[property] === null || compositor[property] === undefined) compositor[property] = model;
+          var value = animation.getAnimatedValue(now); // group animation ? active animation
           
           if (animation.additive) compositor[property] = animation.add(compositor[property],value);
           else compositor[property] = value;
