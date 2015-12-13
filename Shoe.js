@@ -262,12 +262,7 @@ var Shoe = (function() {
         var now = transaction.time;
         
         allAnimations.forEach( function(animation) {
-          var property = animation.property;
-          var value = animation.getAnimatedValue(now); // group animation ? active animation
-          
-          if (animation.additive) compositor[property] = animation.add(compositor[property],value);
-          else compositor[property] = value;
-          
+          animation.composite(compositor,now);
           //if (animation.finished === true) finishedAnimations.push(animation);
           if (animation.finished > 1) throw new Error("Animation finishing twice is not possible");
           if (animation.finished > 0) finishedAnimations.push(animation);
@@ -402,7 +397,8 @@ var Shoe = (function() {
       this[key] = settings[key];
     }.bind(this));
     
-    this.getAnimatedValue = function(now) {
+    //this.getAnimatedValue = function(now) {
+    this.composite = function(onto,now) {
       if (this.startTime === null || this.startTime === undefined) return this.zero();
       var elapsed = Math.max(0, now - (this.startTime + this.delay));
       var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy yet. Part of GraphicsLayer.
@@ -427,8 +423,14 @@ var Shoe = (function() {
       if (isFunction(this.easing)) iterationProgress = this.easing(iterationProgress);
       else if (this.easing !== "linear") iterationProgress = 0.5-(Math.cos(iterationProgress * Math.PI) / 2);
       
-      if (this.blend === "absolute") return this.interpolate(this.from,this.to,iterationProgress);
-      return this.interpolate(this.delta,this.zero(),iterationProgress);
+      var value;
+      if (this.blend === "absolute") value = this.interpolate(this.from,this.to,iterationProgress);
+      //return this.interpolate(this.delta,this.zero(),iterationProgress);
+      else value = this.interpolate(this.delta,this.zero(),iterationProgress);
+      var property = this.property;
+      //var value = animation.getAnimatedValue(now); // group animation ? active animation
+      if (this.additive) onto[property] = this.add(onto[property],value);
+      else onto[property] = value;
     }
     
     this.runAnimation = function(layer,key,removalCallback) {
