@@ -300,7 +300,6 @@ var Shoe = (function() {
     
     /*
     receiver.needsDisplay = function() {
-      // NOT IMPLEMENTED, obviously
       // This should be used instead of directly calling render
     }
     */
@@ -329,14 +328,12 @@ var Shoe = (function() {
       shouldSortAnimations = true;
       copy.runAnimation(receiver, name, removalCallback);
     }
-    //receiver.addAnimationNamed = receiver.addAnimation;
     
     receiver.removeAnimation = function(name) {
       var animation = namedAnimations[name];
       removeAnimationInstance(animation);
       delete namedAnimations[name];
     }
-    //receiver.removeAnimationNamed = receiver.removeAnimation;
     
     receiver.removeAllAnimations = function() {
       allAnimations = [];
@@ -386,19 +383,22 @@ var Shoe = (function() {
     this.from; // type specific. Subclasses must implement zero, add, subtract and interpolate. invert is no longer used
     this.to; // type specific. Subclasses must implement zero, add, subtract and interpolate. invert is no longer used
     this.completion; // NOT FINISHED. callback function, fires regardless of fillMode. Should rename. Should also implement didStart, maybe didTick, etc.
-    this.duration; // float. Need to validate/ensure float >= 0. Defaults to 0.
+    this.duration = 0.0; // float. In seconds. Need to validate/ensure >= 0.
     this.easing; // NOT FINISHED. currently callback function only, need cubic bezier and presets. Defaults to linear
-    this.speed; // float. Defaults to 1. RECONSIDER. Pausing currently not possible like in Core Animation. Layers have speed, beginTime, timeOffset!
-    this.iterations = 1; // float >= 0. Defaults to 1.
+    this.speed = 1.0; // float. RECONSIDER. Pausing currently not possible like in Core Animation. Layers have speed, beginTime, timeOffset!
+    this.iterations = 1; // float >= 0.
     this.autoreverse; // boolean. When iterations > 1. Easing also reversed. Maybe should be named "autoreverses", maybe should be camelCased
     this.fillMode; // string. Defaults to "none". NOT FINISHED. "forwards" and "backwards" are "both". maybe should be named "fill". maybe should just be a boolean
-    this.index = 0; // float. Custom compositing order. Defaults to 0.
-    this.delay; // NOT IMPLEMENTED
+    this.index = 0; // float. Custom compositing order.
+    this.delay = 0; // float. In seconds.
     this.blend = "relative"; // also "absolute" or "zero"
     this.additive = true;
     this.sort;
     this.finished = 0;//false;
     this.startTime; // float
+    this.delta;
+    this.onend;
+    
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
     }.bind(this));
@@ -432,10 +432,8 @@ var Shoe = (function() {
       return this.interpolate(this.delta,this.zero(),iterationProgress);
     }
     
-    this.delta;
-    this.onend;
     this.runAnimation = function(layer,key,removalCallback) {
-      if (!this.duration) this.duration = 0; // need better validation. Currently is split across constructor, setter, and here
+      if (!this.duration) this.duration = 0.0; // need better validation. Currently is split across constructor, setter, and here
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
       if (this.blend !== "absolute") this.delta = this.subtract(this.from,this.to);
@@ -460,6 +458,9 @@ var Shoe = (function() {
         Object.defineProperty(copy, keys[i], Object.getOwnPropertyDescriptor(this, keys[i]));
       }
       return copy;
+    },
+    validate: function(value) {
+      return true;
     },
     zero: function() {
       throw new Error("Shoe.ValueType subclasses must implement function: zero()");
