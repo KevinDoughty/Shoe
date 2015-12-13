@@ -405,8 +405,8 @@ var Shoe = (function() {
     
     this.getAnimatedValue = function(now) {
       if (this.startTime === null || this.startTime === undefined) return this.zero();
-      var elapsed = now - this.startTime;
-      var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy yet
+      var elapsed = Math.max(0, now - (this.startTime + this.delay));
+      var speed = this.speed; // might make speed a property of layer, not animation, might not because no sublayers / layer hierarcy yet. Part of GraphicsLayer.
       var iterationProgress = 1;
       var combinedProgress = 1;
       var iterationDuration = this.duration;
