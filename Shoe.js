@@ -283,7 +283,7 @@ var Shoe = (function() {
         }.bind(receiver));
         
         finishedAnimations.forEach( function(animation) {
-          if (isFunction(animation.onend)) animation.onend();
+          if (isFunction(animation.completion)) animation.completion();
         });
         
         return proxy;
@@ -391,7 +391,6 @@ var Shoe = (function() {
     this.finished = 0;//false;
     this.startTime; // float
     this.delta;
-    this.onend;
     
     if (settings) Object.keys(settings).forEach( function(key) {
       this[key] = settings[key];
