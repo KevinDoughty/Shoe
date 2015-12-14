@@ -376,7 +376,7 @@ var Shoe = (function() {
     this.property; // string, property name
     this.from; // type specific. Subclasses must implement zero, add, subtract and interpolate. invert is no longer used
     this.to; // type specific. Subclasses must implement zero, add, subtract and interpolate. invert is no longer used
-    this.completion; // NOT FINISHED. callback function, fires regardless of fillMode. Should rename. Should also implement didStart, maybe didTick, etc.
+    this.onend; // NOT FINISHED. callback function, fires regardless of fillMode. Should rename. Should also implement didStart, maybe didTick, etc.
     this.duration = 0.0; // float. In seconds. Need to validate/ensure >= 0.
     this.easing; // NOT FINISHED. currently callback function only, need cubic bezier and presets. Defaults to linear
     this.speed = 1.0; // float. RECONSIDER. Pausing currently not possible like in Core Animation. Layers have speed, beginTime, timeOffset!
@@ -434,12 +434,12 @@ var Shoe = (function() {
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
       if (this.blend !== "absolute") this.delta = this.subtract(this.from,this.to);
-      this.onend = function() { // COMPLETION. Should swap the naming. Private should be completion, public should be onend or onEnd
+      this.completion = function() { // COMPLETION. Should swap the naming. Private should be completion, public should be onend or onEnd
         if (!this.fillMode || this.fillMode === "none") {
           removalCallback(this,key);
         }
-        if (isFunction(this.completion)) this.completion();
-        this.onend = null; // lazy way to keep compositor from calling this twice, during fill phase
+        if (isFunction(this.onend)) this.onend();
+        this.completion = null; // lazy way to keep compositor from calling this twice, during fill phase
       }.bind(this);
       if (this.startTime === null || this.startTime === undefined) this.startTime = shoeContext._currentTransaction().time;
     }
