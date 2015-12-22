@@ -433,7 +433,7 @@ var Shoe = (function() {
       if (this.speed === null || this.speed === undefined) this.speed = 1; // need better validation
       if (this.iterations === null || this.iterations === undefined) this.iterations = 1; // negative values have no effect
       if (this.blend !== "absolute") this.delta = this.subtract(this.from,this.to);
-      this.completion = function() { // COMPLETION. Should swap the naming. Private should be completion, public should be onend or onEnd
+      this.completion = function() { // COMPLETION
         if (!this.fillMode || this.fillMode === "none") {
           removalCallback(this,key);
         }
