@@ -59,11 +59,11 @@ var Shoe = (function() {
     this.targets = [];
     this.transactions = [];
     this.ticking = false;
+    this.rendering = false;
     this.frame;
     
     this.mixins = [];
     this.modelLayers = []; // model layers // TODO: Cache presentation layers so you don't have to repeatedly calculate?
-    //this.presentationLayers = [];
     this.unlayerize = function(modelLayer) {
       
     };
@@ -74,7 +74,6 @@ var Shoe = (function() {
         Mixin(mixin,modelLayer,delegate);
         this.mixins.push(mixin);
         this.modelLayers.push(modelLayer);
-        //this.presentationLayers.push(proxy.copy());
       }
       if (mixin) mixin.delegate = delegate;
     };
@@ -86,7 +85,6 @@ var Shoe = (function() {
         Mixin(mixin,modelLayer);
         this.mixins.push(mixin);
         this.modelLayers.push(modelLayer);
-        //this.presentationLayers.push(proxy.copy());
       }
       mixin.addAnimation(animation,name);
     };
@@ -171,9 +169,11 @@ var Shoe = (function() {
         var render = target.delegate.render;
         if (!isFunction(render)) render = target.render;
         if (isFunction(render)) {
+          this.rendering = true;
           var presentation = target.presentation;
           var boundRender = render.bind(presentation);
           boundRender(presentation,target.modelLayer);
+          this.rendering = false;
         }
       }.bind(this));
       var length = this.transactions.length;
@@ -236,6 +236,7 @@ var Shoe = (function() {
     }
     
     var valueForKey = function(property) {
+      if (shoeContext.rendering) return receiver.presentation[property];
       return modelDict[property];
     };
     
@@ -261,9 +262,11 @@ var Shoe = (function() {
         var render = delegate.render;
         if (!isFunction(render)) render = receiver.render;
         if (isFunction(render)) {
+          shoeContext.rendering = true;
           var presentation = receiver.presentation;
           var boundRender = render.bind(presentation);
           boundRender(presentation,receiver.modelLayer);
+          shoeContext.rendering = false;
         }
       }
     };
@@ -696,6 +699,16 @@ var Shoe = (function() {
     commitTransaction: shoeContext.commitTransaction.bind(shoeContext),
     flushTransaction: shoeContext.flushTransaction.bind(shoeContext),
     disableAnimation: shoeContext.disableAnimation.bind(shoeContext),
-    mixin: Mixin // To mixin layer functionality in objects that are not ShoeLayer subclasses.
+    
+    addAnimation: shoeContext.addAnimation.bind(shoeContext),
+    removeAnimation: shoeContext.removeAnimation.bind(shoeContext),
+    removeAllAnimations: shoeContext.removeAllAnimations.bind(shoeContext),
+    animationNamed: shoeContext.animationNamed.bind(shoeContext),
+    animationKeys: shoeContext.animationKeys.bind(shoeContext),
+    presentationLayer: shoeContext.presentationLayer.bind(shoeContext),
+    registerAnimatableProperty: shoeContext.registerAnimatableProperty.bind(shoeContext),
+    
+    layerize: shoeContext.layerize.bind(shoeContext),
+    mixin: Mixin, // To mixin layer functionality in objects that are not ShoeLayer subclasses.
   }
 })();
