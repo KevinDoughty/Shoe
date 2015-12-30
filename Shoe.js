@@ -251,7 +251,6 @@ var Shoe = (function() {
           });
           shouldSortAnimations = false;
         }
-        
         var transaction = shoeContext.currentTransaction();
         var now = transaction.time;
         
