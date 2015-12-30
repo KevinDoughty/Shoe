@@ -49,7 +49,7 @@ var Shoe = (function() {
   function ShoeTransaction(automaticallyCommit) {
     this.time = performance.now() / 1000; // value should probably be inherited from parent transaction
     this.disableAnimation = false; // value should probably be inherited from parent transaction
-    this.layers = {}; // NOT IMPLEMENTED. Cache layers so you don't have to repeatedly calculate presentation values.
+    //this.layers = {}; // TODO: Cache presentation layers so you don't have to repeatedly calculate?
     this.automaticallyCommit = automaticallyCommit;
   }
   
@@ -63,7 +63,7 @@ var Shoe = (function() {
   }
   
   ShoeContext.prototype = {
-    _createTransaction: function(automaticallyCommit) {
+    createTransaction: function(automaticallyCommit) {
       var transaction = new ShoeTransaction(automaticallyCommit);
       var length = this.transactions.length;
       if (length) { // Time freezes in transactions. A time getter should return transaction time if within one.
@@ -72,13 +72,13 @@ var Shoe = (function() {
       this.transactions.push(transaction);
       return transaction;
     },
-    _currentTransaction: function() {
+    currentTransaction: function() {
       var length = this.transactions.length;
       if (length) return this.transactions[length-1];
-      return this._createTransaction(true);
+      return this.createTransaction(true);
     },
     beginTransaction: function() {
-      this._createTransaction();
+      this.createTransaction();
     },
     commitTransaction: function() {
       var transaction = this.transactions.pop();
@@ -88,13 +88,13 @@ var Shoe = (function() {
       this.ticker(); // Probably should not commit existing transaction
     },
     disableAnimation: function(disable) {
-      var transaction = this._currentTransaction();
+      var transaction = this.currentTransaction();
       transaction.disableAnimation = disable;
-      this._startTicking();
+      this.startTicking();
     },
     
     registerTarget: function(target) {
-      this._startTicking();
+      this.startTicking();
       var index = this.targets.indexOf(target);
       if (index < 0) this.targets.push(target);
     },
@@ -103,7 +103,7 @@ var Shoe = (function() {
       var index = this.targets.indexOf(target);
       if (index > -1) this.targets.splice(index, 1);
     },
-    _startTicking: function() {
+    startTicking: function() {
       if (!this.frame) this.frame = rAF(this.ticker.bind(this));
     },
     ticker: function() { // Need to manually cancel animation frame if calling directly.
@@ -123,7 +123,7 @@ var Shoe = (function() {
         var transaction = this.transactions[length-1];
         if (transaction.automaticallyCommit) this.commitTransaction();
       }
-      if (this.targets.length) this._startTicking();
+      if (this.targets.length) this.startTicking();
     }
   }
   var shoeContext = new ShoeContext();
@@ -168,7 +168,7 @@ var Shoe = (function() {
     
     var setValueForKey = function(value,property) {
       var animation;
-      var transaction = shoeContext._currentTransaction();
+      var transaction = shoeContext.currentTransaction();
       if (!transaction.disableAnimation) {
         animation = implicitAnimation(property,value);
         if (animation) {
@@ -258,7 +258,7 @@ var Shoe = (function() {
           shouldSortAnimations = false;
         }
         
-        var transaction = shoeContext._currentTransaction();
+        var transaction = shoeContext.currentTransaction();
         var now = transaction.time;
         
         allAnimations.forEach( function(animation) {
@@ -385,7 +385,7 @@ var Shoe = (function() {
     this.fillMode; // string. Defaults to "none". NOT FINISHED. "forwards" and "backwards" are "both". maybe should be named "fill". maybe should just be a boolean
     this.index = 0; // float. Custom compositing order.
     this.delay = 0; // float. In seconds.
-    this.blend = "relative"; // also "absolute" or "zero"
+    this.blend = "relative"; // also "absolute" or "zero" // Default should be "absolute" if explicit
     this.additive = true;
     this.sort;
     this.finished = 0;//false;
@@ -440,7 +440,7 @@ var Shoe = (function() {
         if (isFunction(this.onend)) this.onend();
         this.completion = null; // lazy way to keep compositor from calling this twice, during fill phase
       }.bind(this);
-      if (this.startTime === null || this.startTime === undefined) this.startTime = shoeContext._currentTransaction().time;
+      if (this.startTime === null || this.startTime === undefined) this.startTime = shoeContext.currentTransaction().time;
     }
   }
   ShoeValue.prototype = {
