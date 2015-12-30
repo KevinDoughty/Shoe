@@ -202,12 +202,10 @@ var Shoe = (function() {
       modelDict[property] = receiver[property];
       Object.defineProperty(receiver, property, { // ACCESSORS
         get: function() {
-          if (receiver._isProxy) throw new Error("PresentationLayer getter should not be used for property:"+property+";");
-          else return valueForKey(property);
+          return valueForKey(property);
         },
         set: function(value) {
-          if (receiver._isProxy) throw new Error("PresentationLayer setter should not be used for property:"+property+";");
-          else setValueForKey(value,property);
+          setValueForKey(value,property);
         },
         enumerable: true,
         configurable: false
@@ -233,17 +231,13 @@ var Shoe = (function() {
     var modelLayer = receiver;
     Object.defineProperty(receiver, "presentation", { // COMPOSITING. Rename "presentationLayer"? Have separate compositor object?
       get: function() { // need transactions and cache presentation layer
-        //if (receiver._isProxy) return modelLayer;
-        if (receiver._isProxy) return receiver; // need both presentationLayer and modelLayer getters
-        
         var compositor = Object.keys(modelDict).reduce(function(n, k){ n[k] = modelDict[k]; return n;}, {});
         Object.keys(compositor).forEach( function(property) {
           var defaultAnimation = defaultAnimations[property];
           if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") compositor[property] = defaultAnimation.zero(); // blend mode zero has conceptual difficulties. Animations affect layers in ways beyond what an animation should. zero presentation is more of a layer property, not animation. Default animation is the only thing that can be used. Can't do this from animationForKey
         });
         var finishedAnimations = [];
-        var proxy = Object.create(receiver);
-        proxy._isProxy = receiver; // do this differently. Maybe have presentationLayer and modelLayer accessors
+        var presentationLayer = Object.create(receiver);
         
         if (shouldSortAnimations) {
           allAnimations.sort( function(a,b) {
@@ -270,7 +264,7 @@ var Shoe = (function() {
         
         var compositorKeys = Object.keys(compositor);
         compositorKeys.forEach( function(property) {
-          Object.defineProperty(proxy, property, {value:compositor[property]});
+          Object.defineProperty(presentationLayer, property, {value:compositor[property]});
         }.bind(receiver));
         
         registeredProperties.forEach( function(property) {
@@ -278,7 +272,7 @@ var Shoe = (function() {
             var value = modelDict[property];
             var defaultAnimation = defaultAnimations[property]; // Blend mode zero suffers from conceptual difficulties. don't want to ask for animationForKey again. need to determine presentation value
             if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") value = defaultAnimation.zero();
-            Object.defineProperty(proxy, property, {value:value});
+            Object.defineProperty(presentationLayer, property, {value:value});
           }
         }.bind(receiver));
         
@@ -286,7 +280,7 @@ var Shoe = (function() {
           if (isFunction(animation.completion)) animation.completion();
         });
         
-        return proxy;
+        return presentationLayer;
       },
       enumerable: false,
       configurable: false
