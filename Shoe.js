@@ -60,6 +60,63 @@ var Shoe = (function() {
     this.transactions = [];
     this.ticking = false;
     this.frame;
+    
+    this.mixins = [];
+    this.modelLayers = []; // model layers // TODO: Cache presentation layers so you don't have to repeatedly calculate?
+    //this.presentationLayers = [];
+    this.unlayerize = function(modelLayer) {
+      
+    };
+    this.layerize = function(modelLayer,delegate) {
+      var mixin = this.mixinForModelLayer(modelLayer);
+      if (!mixin) {
+        mixin = {};
+        Mixin(mixin,modelLayer,delegate);
+        this.mixins.push(mixin);
+        this.modelLayers.push(modelLayer);
+        //this.presentationLayers.push(proxy.copy());
+      }
+      if (mixin) mixin.delegate = delegate;
+    };
+    
+    this.addAnimation = function(modelLayer,animation,name) {
+      var mixin = this.mixinForModelLayer(modelLayer);
+      if (!mixin) { // maybe require layerize() rather than lazy create
+        mixin = {};
+        Mixin(mixin,modelLayer);
+        this.mixins.push(mixin);
+        this.modelLayers.push(modelLayer);
+        //this.presentationLayers.push(proxy.copy());
+      }
+      mixin.addAnimation(animation,name);
+    };
+    this.removeAnimation = function(object,name) {
+      var mixin = this.mixinForModelLayer(object);
+      if (mixin) mixin.removeAnimation(name);
+    };
+    this.removeAllAnimations = function(object) {
+      var mixin = this.mixinForModelLayer(object);
+      if (mixin) mixin.removeAllAnimations();
+    };
+    this.animationNamed = function(object,name) {
+      var mixin = this.mixinForModelLayer(object);
+      if (mixin) return mixin.animationNamed(name);
+      return null;
+    };
+    this.animationKeys = function(object) {
+      var mixin = this.mixinForModelLayer(object);
+      if (mixin) return mixin.animationKeys();
+      return [];
+    };
+    this.presentationLayer = function(object) {
+      var mixin = this.mixinForModelLayer(object);
+      if (mixin) return mixin.presentation;
+      return object; // oh yeah?
+    };
+    this.registerAnimatableProperty = function(object,property,defaultValue) {
+      var mixin = this.mixinForModelLayer(object);
+      if (mixin) mixin.registerAnimatableProperty(property,defaultValue,object);
+    };
   }
   
   ShoeContext.prototype = {
@@ -111,11 +168,12 @@ var Shoe = (function() {
       var targets = this.targets.slice(0);
       targets.forEach( function(target) {
         if (!target.animations.length) this.deregisterTarget(target); // Deregister here to ensure one more tick after last animation has been removed
-        var render = target.render;
+        var render = target.delegate.render;
+        if (!isFunction(render)) render = target.render;
         if (isFunction(render)) {
-          var layer = target.presentation || target;
-          var boundRender = render.bind(layer);
-          boundRender();
+          var presentation = target.presentation;
+          var boundRender = render.bind(presentation);
+          boundRender(presentation,target.modelLayer);
         }
       }.bind(this));
       var length = this.transactions.length;
@@ -126,6 +184,12 @@ var Shoe = (function() {
       if (this.targets.length) this.startTicking();
     }
   }
+  
+  ShoeContext.prototype.mixinForModelLayer = function(object) { // Pretend this uses a weak map
+    var index = this.modelLayers.indexOf(object);
+    if (index > -1) return this.mixins[index];
+  }
+  
   var shoeContext = new ShoeContext();
   
   
@@ -140,11 +204,20 @@ var Shoe = (function() {
     var shouldSortAnimations = false;
     var animationNumber = 0; // order added
     
+    if (modelLayer === null || modelLayer === undefined) modelLayer = receiver;
+    receiver.modelLayer = modelLayer;
+    
+    if (delegate === null || delegate === undefined) delegate = modelLayer;
+    receiver.delegate = delegate;
+    
     var implicitAnimation = function(property,value) {
       var animation;
       var description;
-      var animationForKey = receiver.animationForKey;
-      if (isFunction(animationForKey)) description = receiver.animationForKey(property,value,receiver); // If prototype chain is not properly constructed, Shoe.Layer animationForKey will not exist.
+      
+      //var animationForKey = delegate.animationForKey;
+      //if(!isFunction(animationForKey)) animationForKey = receiver.animationForKey;
+      if (isFunction(delegate.animationForKey)) description = delegate.animationForKey(property,value,receiver.modelLayer);
+      
       var defaultAnimation = defaultAnimations[property];
       if (description && description instanceof ShoeValue) {
         animation = description.copy();
@@ -183,24 +256,31 @@ var Shoe = (function() {
       }
       modelDict[property] = value;
       if (!animation) { // need to manually call render on property value change without animation. transactions.
-        var layer = receiver.presentation || receiver;
-        if (isFunction(layer.render)) layer.render();
+        //var layer = receiver.presentation;
+        //if (isFunction(layer.render)) layer.render();
+        var render = delegate.render;
+        if (!isFunction(render)) render = receiver.render;
+        if (isFunction(render)) {
+          var presentation = receiver.presentation;
+          var boundRender = render.bind(presentation);
+          boundRender(presentation,receiver.modelLayer);
+        }
       }
     };
     
-    receiver.registerAnimatableProperty = function(property, defaultValue) {
+    receiver.registerAnimatableProperty = function(property, defaultValue) { // Needed to trigger implicit animation.
       registeredProperties.push(property);
       var defaultAnimation = defaultValue;
       if (isFunction(defaultValue)) defaultAnimation = new defaultValue();
-      var descriptor = Object.getOwnPropertyDescriptor(receiver, property);
+      var descriptor = Object.getOwnPropertyDescriptor(modelLayer, property);
       if (descriptor && descriptor.configurable === false) {
         console.log("ShoeLayer:%s; registerAnimatableProperty:%s; already defined:%s;",receiver,property, JSON.stringify(descriptor),receiver);
         return;
       }
       if (defaultAnimation) defaultAnimations[property] = defaultAnimation;
       else if (defaultAnimations[property]) delete defaultAnimations[property]; // property is still animatable
-      modelDict[property] = receiver[property];
-      Object.defineProperty(receiver, property, { // ACCESSORS
+      modelDict[property] = modelLayer[property];
+      Object.defineProperty(modelLayer, property, { // ACCESSORS
         get: function() {
           return valueForKey(property);
         },
