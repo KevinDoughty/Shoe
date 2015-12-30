@@ -83,7 +83,7 @@ var Shoe = (function() {
     commitTransaction: function() {
       var transaction = this.transactions.pop();
     },
-    flushTransaction: function() {
+    flushTransaction: function() { // TODO: prevent unterminated when called within render
       if (this.frame) cAF(this.frame); // Unsure if cancelling animation frame is needed.
       this.ticker(); // Probably should not commit existing transaction
     },
@@ -130,7 +130,7 @@ var Shoe = (function() {
   
   
   
-  function Layerize(receiver) {
+  function Mixin(receiver,modelLayer,delegate) {
     var modelDict = {};
     var registeredProperties = [];
     var allAnimations = [];
@@ -217,7 +217,7 @@ var Shoe = (function() {
     Object.defineProperty(receiver, "animations", {
       get: function() {
         return allAnimations.map(function (animation) {
-          return animation.copy(); // Lots of copying. Potential optimization
+          return animation.copy(); // Lots of copying. Potential optimization. Instead maybe freeze properties.
         });
       },
       enumerable: false,
@@ -344,7 +344,7 @@ var Shoe = (function() {
   
   
   function ShoeLayer() { // Meant to be subclassed to provide implicit animation and clear distinction between model/presentation values
-    Layerize(this);
+    Mixin(this);
   }
   ShoeLayer.prototype = {};
   ShoeLayer.prototype.constructor = ShoeLayer;
@@ -604,6 +604,6 @@ var Shoe = (function() {
     commitTransaction: shoeContext.commitTransaction.bind(shoeContext),
     flushTransaction: shoeContext.flushTransaction.bind(shoeContext),
     disableAnimation: shoeContext.disableAnimation.bind(shoeContext),
-    layerize: Layerize // To mixin layer functionality in objects that are not ShoeLayer subclasses.
+    mixin: Mixin // To mixin layer functionality in objects that are not ShoeLayer subclasses.
   }
 })();
