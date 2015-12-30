@@ -228,57 +228,76 @@ var Shoe = (function() {
       enumerable: false
     });
     
-    var modelLayer = receiver;
-    Object.defineProperty(receiver, "presentation", { // COMPOSITING. Rename "presentationLayer"? Have separate compositor object?
-      get: function() { // need transactions and cache presentation layer
-        var compositor = Object.keys(modelDict).reduce(function(n, k){ n[k] = modelDict[k]; return n;}, {});
-        Object.keys(compositor).forEach( function(property) {
-          var defaultAnimation = defaultAnimations[property];
-          if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") compositor[property] = defaultAnimation.zero(); // blend mode zero has conceptual difficulties. Animations affect layers in ways beyond what an animation should. zero presentation is more of a layer property, not animation. Default animation is the only thing that can be used. Can't do this from animationForKey
+    var presentationKey = "presentation"; // Rename "presentationLayer"?
+    var presentationComposite = function() {
+      var presentationLayer = Object.create(receiver);
+      var compositor = Object.keys(modelDict).reduce(function(n, k){ n[k] = modelDict[k]; return n;}, {});
+      Object.keys(compositor).forEach( function(property) {
+        var defaultAnimation = defaultAnimations[property];
+        if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") compositor[property] = defaultAnimation.zero(); // blend mode zero has conceptual difficulties. Animations affect layers in ways beyond what an animation should. zero presentation is more of a layer property, not animation. Default animation is the only thing that can be used. Can't do this from animationForKey
+      });
+      var finishedAnimations = [];
+      
+      Object.defineProperty(presentationLayer, presentationKey, { // FIX ME // value should be the presentation layer itself
+        //get: function() {
+        //  return receiver;
+        //},
+        value: null,
+        enumerable: false,
+        configurable: false
+      });
+      
+      if (shouldSortAnimations) {
+        allAnimations.sort( function(a,b) {
+          var A = a.index, B = b.index;
+          if (A === null || A === undefined) A = 0;
+          if (B === null || B === undefined) B = 0;
+          var result = A - B;
+          if (!result) result = a.startTime - b.startTime;
+          if (!result) result = a.number - b.number; // animation number is needed because sort is not guaranteed to be stable
+          return result;
         });
-        var finishedAnimations = [];
-        var presentationLayer = Object.create(receiver);
-        
-        if (shouldSortAnimations) {
-          allAnimations.sort( function(a,b) {
-            var A = a.index, B = b.index;
-            if (A === null || A === undefined) A = 0;
-            if (B === null || B === undefined) B = 0;
-            var result = A - B;
-            if (!result) result = a.startTime - b.startTime;
-            if (!result) result = a.number - b.number; // animation number is needed because sort is not guaranteed to be stable
-            return result;
-          });
-          shouldSortAnimations = false;
+        shouldSortAnimations = false;
+      }
+      var transaction = shoeContext.currentTransaction();
+      var now = transaction.time;
+      
+      allAnimations.forEach( function(animation) {
+        animation.composite(compositor,now);
+        //if (animation.finished === true) finishedAnimations.push(animation);
+        if (animation.finished > 1) throw new Error("Animation finishing twice is not possible");
+        if (animation.finished > 0) finishedAnimations.push(animation);
+      });
+      
+      var compositorKeys = Object.keys(compositor);
+      compositorKeys.forEach( function(property) {
+        Object.defineProperty(presentationLayer, property, {value:compositor[property]});
+      }.bind(receiver));
+      registeredProperties.forEach( function(property) {
+        if (compositorKeys.indexOf(property) === -1) {
+          var value = modelDict[property];
+          var defaultAnimation = defaultAnimations[property]; // Blend mode zero suffers from conceptual difficulties. don't want to ask for animationForKey again. need to determine presentation value
+          if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") value = defaultAnimation.zero();
+          Object.defineProperty(presentationLayer, property, {value:value});
         }
-        var transaction = shoeContext.currentTransaction();
-        var now = transaction.time;
-        
-        allAnimations.forEach( function(animation) {
-          animation.composite(compositor,now);
-          //if (animation.finished === true) finishedAnimations.push(animation);
-          if (animation.finished > 1) throw new Error("Animation finishing twice is not possible");
-          if (animation.finished > 0) finishedAnimations.push(animation);
-        });
-        
-        var compositorKeys = Object.keys(compositor);
-        compositorKeys.forEach( function(property) {
-          Object.defineProperty(presentationLayer, property, {value:compositor[property]});
-        }.bind(receiver));
-        
-        registeredProperties.forEach( function(property) {
-          if (compositorKeys.indexOf(property) === -1) {
-            var value = modelDict[property];
-            var defaultAnimation = defaultAnimations[property]; // Blend mode zero suffers from conceptual difficulties. don't want to ask for animationForKey again. need to determine presentation value
-            if (defaultAnimation instanceof ShoeValue && defaultAnimation.blend === "zero") value = defaultAnimation.zero();
-            Object.defineProperty(presentationLayer, property, {value:value});
-          }
-        }.bind(receiver));
-        
-        finishedAnimations.forEach( function(animation) {
-          if (isFunction(animation.completion)) animation.completion();
-        });
-        
+      }.bind(receiver));
+      
+      finishedAnimations.forEach( function(animation) {
+        if (isFunction(animation.completion)) animation.completion();
+      });
+      return presentationLayer;
+    }
+    
+    Object.defineProperty(receiver, presentationKey, { // COMPOSITING. Have separate compositor object?
+      get: function() { // need transactions and cache presentation layer
+        //var presentationLayer = shoeContext.storageForModelLayer(receiver.modelLayer);
+        //if (presentationLayer) console.log("exists!");
+        var presentationLayer;
+        if (!presentationLayer) { // always...
+          presentationLayer = presentationComposite();
+          
+          //shoeContext.setStorageForModelLayer(presentationLayer,receiver.modelLayer);
+        } // end if (!presentationLayer)
         return presentationLayer;
       },
       enumerable: false,
